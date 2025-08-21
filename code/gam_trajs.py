@@ -5,6 +5,7 @@ from joblib import Parallel, delayed
 from pygam import LinearGAM, s
 from sklearn.model_selection import KFold  # only used if cv_splits > 0
 from scipy.sparse import issparse
+from sklearn.decomposition import PCA
 import pygam.utils as _pgutils
 
 SEED = 920
@@ -39,10 +40,13 @@ def _beta_column_names(prefix: str, n_splines: int) -> list[str]:
     """
     return [f"{prefix}_beta_intercept"] + [f"{prefix}_beta_s{i+1}" for i in range(n_splines)]
 
+def _is_good_coef(coef: np.ndarray, tol=1e-12) -> bool:
+    return np.isfinite(coef).all() and (np.linalg.norm(coef) > tol)
 
 # -----------------------------
 # Core: fit GAM adaptively & return betas
 # -----------------------------
+
 def _fit_gam_get_betas_adaptive(
     time_scaled: np.ndarray,
     y: np.ndarray,
@@ -115,68 +119,141 @@ def _fit_one(X, y, n_spl: int, lam: float, spline_order: int, max_iter: int) -> 
     gam.fit(X, y)
     return gam
 
+
+def _fit_gam_robust(
+    time_scaled: np.ndarray,
+    y: np.ndarray,
+    spline_order: int,
+    n_splines_range: tuple[int, int],
+    lam_grid: tuple[float, ...],
+    max_iter: int,
+) -> tuple[np.ndarray, int, float, int, int, int]:
+    """
+    Try to fit LinearGAM with (n_splines, lam) combos.
+    Strategy:
+      - respect data limit: n_splines <= n - (spline_order+1)
+      - try from larger to smaller n_splines; multiple lam values
+      - accept first model with finite, non-zero coefficients
+    Returns:
+      coef, n_used, lam_used, attempts, fit_success(0/1), zero_beta(0/1)
+    """
+    X = np.asarray(time_scaled, float).reshape(-1, 1)
+    y = np.asarray(y, float)
+    n = len(y)
+
+    max_by_data = max(1, n - (spline_order + 1))
+    lo, hi = n_splines_range
+    hi = min(hi, max_by_data)
+    if hi < lo:
+        hi = lo
+    # try bigger to smaller (more flexible first), then shrink
+    ns_list = list(range(hi, lo - 1, -1))
+    # try smaller λ first (less shrinkage), then larger
+    lam_list = list(lam_grid)
+
+    attempts = 0
+    for n_spl in ns_list:
+        for lam in lam_list:
+            attempts += 1
+            try:
+                gam = LinearGAM(s(0, n_splines=n_spl, spline_order=spline_order),
+                                lam=lam, max_iter=max_iter)
+                gam.fit(X, y)
+                coef = gam.coef_.astype(float)
+                if _is_good_coef(coef):
+                    return coef, n_spl, float(lam), attempts, 1, 0  # success, not zero
+                else:
+                    # coefficients finite but zero (or near zero)
+                    # keep searching simpler/other lam
+                    continue
+            except Exception as e:
+                print(e)
+                # try next combo
+                continue
+
+    # if we get here: all attempts failed → return zeros
+    n_spl = ns_list[-1] if ns_list else 1
+    coef = np.zeros(1 + n_spl, dtype=float)
+    return coef, n_spl, float(lam_list[-1]), attempts, 0, 1  # failed, zero_beta=1
+
 # -----------------------------
 # work unit: one patient
 # -----------------------------
 def _process_one_patient(
-    g_pid: pd.DataFrame,
-    labs: list[str],
-    window_years: float,
-    n_splines_range: tuple[int, int],
-    lam_grid: tuple[float, ...],
-    min_points_per_window: int,
-    standardize_y: bool,
-    cv_splits: int,
-    max_iter: int,
+        g_pid: pd.DataFrame,
+        labs: list[str],
+        window_years: float,
+        n_splines_range: tuple[int, int],
+        lam_grid: tuple[float, ...],
+        min_points_per_window: int,
+        standardize_y: bool,
+        cv_splits: int,
+        max_iter: int,
+        spline_order: int,
+        pids: str = 'patient_id',
+        time_col: str = 'time',
+        robust=False
 ) -> list[dict]:
-    pid = g_pid["patient_id"].iat[0]
-    times_anchor = np.sort(g_pid["time"].unique())
+    pid = g_pid[pids].iat[0]
+    times_anchor = np.sort(g_pid[time_col].unique())
     max_k_global = n_splines_range[1]
     recs = []
 
     for t_anchor in times_anchor:
         t_start = t_anchor - window_years
-        rec = {"patient_id": pid, "time": float(t_anchor)}
+        rec = {pids: pid, time_col: float(t_anchor)}
         any_lab = False
 
         for lab in labs:
-            g = g_pid[(g_pid["lab_test"] == lab) &
-                      (g_pid["time"] >= t_start) &
-                      (g_pid["time"] <= t_anchor)].sort_values("time")
-
+            g = g_pid[(g_pid[time_col] >= t_start) & (g_pid[time_col] <= t_anchor)].sort_values(time_col)
             beta_cols = _beta_column_names(lab, max_k_global)
             # zero‑init block + flags
             for c in beta_cols:
                 rec[c] = 0.0
-            rec[f"{lab}_n_splines"] = 0
-            rec[f"{lab}_lam"] = np.nan
+            rec[f"{lab}_n_splines"], rec[f"{lab}_lam"] = 0, np.nan
+
+            if robust:
+                rec[f"{lab}_fit_success"], rec[f"{lab}_zero_beta"], rec[f"{lab}_attempts"] = 0, 1, 0
 
             if len(g) < min_points_per_window:
                 continue
 
-            ts, _, _ = _scale_time_to_unit(g["time"].to_numpy(float))
-            y = g["lab_value"].to_numpy(float)
+            ts, _, _ = _scale_time_to_unit(g[time_col].to_numpy(float))
+            y = g[lab].to_numpy(float)
             if standardize_y:
                 mu, sd = float(np.mean(y)), float(np.std(y)) or 1.0
                 y = (y - mu) / sd
 
-            try:
-                betas, n_best, lam_best = _fit_gam_get_betas_adaptive(
-                    ts, y,
-                    n_splines_range=n_splines_range,
-                    lam_grid=lam_grid,
-                    max_iter=max_iter,
-                    cv_splits=cv_splits,
-                )
-                pad = np.zeros(1 + max_k_global, dtype=float)
-                pad[:1 + n_best] = betas[:1 + n_best]
+            pad = np.zeros(1 + max_k_global, dtype=float)  # pad to fixed width
+            if robust:  # robust fitting with fallback
+                coef, n_used, lam_used, attempts, ok, zero_beta = _fit_gam_robust(
+                    ts, y, spline_order=spline_order, n_splines_range=n_splines_range,
+                    lam_grid=lam_grid, max_iter=max_iter)
+
+                pad[:1 + min(n_used, max_k_global)] = coef[:1 + min(n_used, max_k_global)]
                 for c, v in zip(beta_cols, pad):
                     rec[c] = float(v)
-                rec[f"{lab}_n_splines"] = int(n_best)
-                rec[f"{lab}_lam"] = float(lam_best)
-                any_lab = True
-            except Exception as e:
-                print(e)
+
+                rec[f"{lab}_n_splines"] = int(n_used)
+                rec[f"{lab}_lam"] = float(lam_used)
+                rec[f"{lab}_fit_success"] = int(ok)
+                rec[f"{lab}_zero_beta"] = int(zero_beta)
+                rec[f"{lab}_attempts"] = int(attempts)
+                any_lab = any_lab or bool(ok)
+            else:
+                try:
+                    betas, n_best, lam_best = _fit_gam_get_betas_adaptive(
+                        ts, y, n_splines_range=n_splines_range, lam_grid=lam_grid,
+                        max_iter=max_iter, cv_splits=cv_splits)
+
+                    pad[:1 + n_best] = betas[:1 + n_best]
+                    for c, v in zip(beta_cols, pad):
+                        rec[c] = float(v)
+                    rec[f"{lab}_n_splines"] = int(n_best)
+                    rec[f"{lab}_lam"] = float(lam_best)
+                    any_lab = True
+                except Exception as e:
+                    print(e)
 
         if any_lab:
             recs.append(rec)
@@ -188,17 +265,21 @@ def _process_one_patient(
 # -----------------------------
 
 def compute_gam_beta_covariates_adaptive_parallel(
-    lab_df: pd.DataFrame,
-    window_years: float = 2.0,
-    labs: list[str] | None = None,
-    n_splines_range: tuple[int, int] = (4, 6),
-    lam_grid: tuple[float, ...] = (0.3, 1.0, 3.0),
-    min_points_per_window: int = 6,
-    standardize_y: bool = True,
-    cv_splits: int = 0,
-    max_iter: int = 5000,
-    n_jobs: int = -1,
-    verbose: int = 5,
+        lab_df: pd.DataFrame,
+        window_years: float = 2.0,
+        labs: list[str] | None = None,
+        n_splines_range: tuple[int, int] = (4, 6),
+        lam_grid: tuple[float, ...] = (0.3, 1.0, 3.0),
+        min_points_per_window: int = 6,
+        standardize_y: bool = True,
+        cv_splits: int = 0,
+        max_iter: int = 5000,
+        spline_order: int = 3,
+        n_jobs: int = -1,
+        verbose: int = 5,
+        pids: str = 'patient_id',
+        time_col: str = 'time',
+        robust: bool = False
 ) -> pd.DataFrame:
     """
     Parallel GAM-beta covariates:
@@ -208,10 +289,9 @@ def compute_gam_beta_covariates_adaptive_parallel(
     Returns tidy DataFrame: ['patient_id','time', <beta cols>, <flags>]
     """
     if labs is None:
-        labs = sorted(lab_df["lab_test"].unique().tolist())
+        labs = sorted(lab_df.columns.difference([pids, time_col]).tolist())
 
     # joblib prefers lightweight payloads; pre-split by patient
-    patient_groups = [g for _, g in lab_df.groupby("patient_id", sort=False)]
 
     results = Parallel(n_jobs=n_jobs, backend="loky", verbose=verbose)(
         delayed(_process_one_patient)(
@@ -224,145 +304,40 @@ def compute_gam_beta_covariates_adaptive_parallel(
             standardize_y=standardize_y,
             cv_splits=cv_splits,
             max_iter=max_iter,
+            spline_order=spline_order,
+            pids=pids,
+            time_col=time_col,
+            robust=robust
         )
-        for g in patient_groups
+        for _, g in lab_df.groupby(pids, sort=False)
     )
 
     # flatten
     flat = [rec for sub in results for rec in sub]
     cov_df = (pd.DataFrame.from_records(flat)
-              .sort_values(["patient_id", "time"])
+              .sort_values([pids, time_col])
               .reset_index(drop=True))
-    return cov_df
-
-def compute_gam_beta_covariates_adaptive(
-    lab_df: pd.DataFrame,
-    window_years: float = 2.0,
-    labs: list[str] | None = None,
-    n_splines_range: tuple[int, int] = (3, 6),
-    lam_grid: tuple[float, ...] = (0.3, 1.0, 3.0),
-    min_points_per_window: int = 6,
-    standardize_y: bool = True,
-    cv_splits: int = 0,
-    seed: int = SEED,
-) -> pd.DataFrame:
-    """
-    Build time-varying GAM beta covariates over sliding windows.
-
-    Input
-    -----
-    lab_df: long DataFrame with columns:
-        'patient_id' (hashable), 'time' (float YEARS), 'lab_test' (str), 'lab_value' (float)
-        Irregular sampling supported.
-    window_years: retrospective window length (e.g., 2.0)
-    labs: subset of lab_test to include (None -> all)
-    n_splines_range: tuple(min, max) candidate spline counts per window (adaptive)
-    lam_grid: candidate λ values (pyGAM penalty)
-    min_points_per_window: minimum points to attempt a GAM fit
-    standardize_y: if True, z-score y within window (betas used as representations, not slopes)
-    cv_splits: 0 -> use GCV; >0 -> K-fold CV on MSE (slower)
-    seed: random seed
-
-    Output
-    ------
-    DataFrame with one row per (patient_id, time) anchor, containing:
-        - For each lab:
-            {lab}_beta_intercept, {lab}_beta_s1, ... ,{lab}_beta_sK (zero-padded to K=max in n_splines_range)
-            {lab}_n_splines (int), {lab}_lam (float)
-        - plus 'patient_id', 'time'
-    """
-    if labs is None:
-        labs = sorted(lab_df["lab_test"].unique().tolist())
-
-    max_k_global = n_splines_range[1]  # for fixed-width padding
-    out_records = []
-
-    # Iterate patients
-    for pid, g_pid in lab_df.groupby("patient_id"):
-        # Anchor only at observed measurement times for efficiency
-        for t_anchor in np.sort(g_pid["time"].unique()):
-            t_start = t_anchor - window_years
-            rec = {"patient_id": pid, "time": float(t_anchor)}
-            any_lab_fit = False
-
-            for lab in labs:
-                g = g_pid[
-                    (g_pid["lab_test"] == lab)
-                    & (g_pid["time"] >= t_start)
-                    & (g_pid["time"] <= t_anchor)
-                ].sort_values("time")
-
-                # Predeclare zero-padded betas + flags
-                beta_cols = _beta_column_names(lab, max_k_global)
-                for c in beta_cols:
-                    rec[c] = 0.0
-                rec[f"{lab}_n_splines"] = 0
-                rec[f"{lab}_lam"] = np.nan
-
-                if len(g) < min_points_per_window:
-                    continue
-
-                t = g["time"].to_numpy(dtype=float)
-                ts, _, _ = _scale_time_to_unit(t)
-
-                y = g["lab_value"].to_numpy(dtype=float)
-                if standardize_y:
-                    ymu = float(np.mean(y))
-                    ysd = float(np.std(y)) or 1.0
-                    y_fit = (y - ymu) / ysd
-                else:
-                    y_fit = y
-
-                try:
-                    betas, n_best, lam_best = _fit_gam_get_betas_adaptive(
-                        ts,
-                        y_fit,
-                        n_splines_range=n_splines_range,
-                        lam_grid=lam_grid,
-                        seed=seed,
-                        cv_splits=cv_splits,
-                    )
-                    # Zero-pad to (1 + max_k_global)
-                    pad = np.zeros(1 + max_k_global, dtype=float)
-                    pad[: 1 + n_best] = betas[: 1 + n_best]
-                    for c, v in zip(beta_cols, pad):
-                        rec[c] = float(v)
-
-                    rec[f"{lab}_n_splines"] = int(n_best)
-                    rec[f"{lab}_lam"] = float(lam_best)
-                    any_lab_fit = True
-                except Exception as e:
-                    # Keep zeros + n_splines=0 to mark failure/insufficient data
-                    print(e)
-
-            if any_lab_fit:
-                out_records.append(rec)
-
-
-    cov_df = (
-        pd.DataFrame.from_records(out_records)
-        .sort_values(["patient_id", "time"])
-        .reset_index(drop=True)
-    )
     return cov_df
 
 # -----------------------------
 # Optional: PCA compression of beta blocks (fixed width already)
 # -----------------------------
 def pca_reduce_gam_betas(
-    cov_df: pd.DataFrame,
-    labs: list[str],
-    n_components: int = 3,
-    impute_value: float = 0.0,
-    random_state: int = SEED,
+        cov_df: pd.DataFrame,
+        labs: list[str],
+        n_components: int = 3,
+        impute_value: float = 0.0,
+        random_state: int = SEED,
+        pids: str = "patient_id",
+        time_col: str = 'time'
 ) -> pd.DataFrame:
     """
     Reduce each lab's zero-padded beta block to n principal components.
-    Returns a DataFrame with ['patient_id','time', <lab>_beta_pc1..pcK] per lab.
+    Returns a DataFrame with ['patient_id','time', <lab>_beta_pc1, ..., pcK] per lab.
     """
-    from sklearn.decomposition import PCA
 
-    out = cov_df[["patient_id", "time"]].copy()
+
+    out = cov_df[[pids, time_col]].copy()
 
     for lab in labs:
         cols = [c for c in cov_df.columns if c.startswith(f"{lab}_beta_")]
