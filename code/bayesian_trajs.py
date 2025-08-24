@@ -1,4 +1,4 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 import numpy as np
 import pandas as pd
 import pymc as pm
@@ -92,8 +92,12 @@ def _posterior_feature_probs_from_samples(y_samples,
                                           flat_thr: float = -1.0,
                                           decline_thr: float= -2.0,
                                           nonlinear_gap: float = 3.0,
-                                          class_func: Callable[..., dict] = flags_from_traj) -> dict[str, float]:
-    counts = {'prolonged_nonprogression': 0, 'linear_decline': 0, 'nonlinear': 0}
+                                          class_func: Callable[..., dict] = flags_from_traj,
+                                          traj_types: Iterable[str] = ('prolonged_nonprogression',
+                                                                       'linear_decline',
+                                                                       'nonlinear')
+                                          ) -> dict[str, float]:
+    counts = {traj_t: 0 for traj_t in traj_types}
     n_samples = y_samples.shape[0]
     for i in range(n_samples):
         flags = class_func(y_samples[i], time_grid, flat_thr, decline_thr, nonlinear_gap)
@@ -113,13 +117,18 @@ def _window_worker(window_df: pd.DataFrame,
                    grid_freq: int = 12,
                    class_func: Callable[..., dict] = flags_from_traj,
                    values: str = 'lab_value',
-                   time_col: str = 'time'):
+                   time_col: str = 'time',
+                   traj_types: Iterable[str] = ('prolonged_nonprogression',
+                                                'linear_decline',
+                                                'nonlinear')
+                   ):
     """Compute posterior feature probabilities for a single window."""
     time_grid, y_samples = _sample_post_trajs_scaled(window_df, df_basis=df_basis, n_samples=n_samples,
                                                      tune=tune, min_points=min_points ,grid_freq=grid_freq,
                                                      values=values, time_col=time_col)
     return _posterior_feature_probs_from_samples(y_samples, time_grid, flat_thr=flat_thr, decline_thr=decline_thr,
-                                                 nonlinear_gap=nonlinear_gap, class_func=class_func)
+                                                 nonlinear_gap=nonlinear_gap, class_func=class_func,
+                                                 traj_types=traj_types)
 
 
 def compute_time_varying_trajectory_covariates_parallel(
@@ -138,6 +147,9 @@ def compute_time_varying_trajectory_covariates_parallel(
         pids: str = 'patient_id',
         values: str = 'lab_value',
         time_col: str = 'time',
+        traj_types: Iterable[str] = ('prolonged_nonprogression',
+                                     'linear_decline',
+                                     'nonlinear'),
         verbose: int = 0
 ):
     """
@@ -159,7 +171,7 @@ def compute_time_varying_trajectory_covariates_parallel(
     results = Parallel(n_jobs=n_jobs, backend="loky", verbose=verbose)(
         delayed(_window_worker)(win_df, flat_thr=flat_thr, decline_thr=decline_thr, nonlinear_gap=nonlinear_gap,
                                 df_basis=df_basis, n_samples=n_samples, tune=tune, grid_freq=grid_freq,
-                                class_func=class_func, values=values, time_col=time_col)
+                                class_func=class_func, values=values, time_col=time_col, traj_types=traj_types)
         for (_, _, win_df) in windows
     )
 
@@ -168,10 +180,7 @@ def compute_time_varying_trajectory_covariates_parallel(
     for (pid, t, _), probs in zip(windows, results):
         rec = {pids: pid, time_col: t}
         rec.update({
-            'traj_prob_prolonged_nonprogression': probs['traj_prob_prolonged_nonprogression'],
-            'traj_prob_linear_decline':            probs['traj_prob_linear_decline'],
-            'traj_prob_nonlinear':                 probs['traj_prob_nonlinear'],
-        })
+            k: probs[k] for k in probs})
         records.append(rec)
     return pd.DataFrame(records)
 
