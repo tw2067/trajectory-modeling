@@ -1,0 +1,14 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration name="train-bayes" type="PythonConfigurationType" factoryName="Python">
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/scripts/train.py" />
+    <option name="PARAMETERS" value="--backend bayes --data_cfg configs/data.yaml --train_cfg configs/bayes.yaml --save_dir artifacts" />
+    <option name="ADD_CONTENT_ROOTS" value="true" />
+    <option name="ADD_SOURCE_ROOTS" value="true" />
+    <option name="IS_MODULE_SDK" value="true" />
+    <envs>
+      <env name="PYTHONPATH" value="src" />
+    </envs>
+    <method v="2" />
+  </configuration>
+</component>

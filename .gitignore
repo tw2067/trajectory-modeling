@@ -1,0 +1,9 @@
+/illustrations.pptx
+__pycache__/
+*.pyc
+.venv/
+.env
+/data/
+/code/
+logs/
+*.pt

@@ -1,0 +1,5 @@
+seed: 920
+n_patients: 120
+bin_width: 0.0833333333  # monthly in years
+embed_features: ["eGFR","HbA1c"]
+agg_features:   ["SBP","MedA"]
