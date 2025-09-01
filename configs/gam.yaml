@@ -1,0 +1,16 @@
+backend: gam
+window_years: 2.0
+
+# spline search space (adaptive)
+n_splines_range: [4, 6]
+lam_grid: [0.3, 1.0, 3.0]
+spline_order: 3
+max_iter: 5000
+min_points_per_window: 6
+standardize_y: true
+cv_splits: 0           # set >0 to prefer KFold over GCV
+n_jobs: -1
+verbose: 5
+
+# optional dimensionality reduction of beta blocks
+pca_components: null   # e.g., 3 to emit <lab>_beta_pc1..pc3 instead of raw betas

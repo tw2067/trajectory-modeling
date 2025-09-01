@@ -1,3 +1,32 @@
+Metadata-Version: 2.4
+Name: traj_ps
+Version: 0.1.0
+Summary: TrajPS: Trajectory-based propensity score modeling (Deep, Bayesian, GAM)
+Author: Tammy Wertheimer
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: numpy<2.0,>=1.22
+Requires-Dist: pandas>=1.5
+Requires-Dist: pyyaml>=6.0
+Provides-Extra: deep
+Requires-Dist: torch>=2.0; extra == "deep"
+Requires-Dist: tqdm>=4.66; extra == "deep"
+Provides-Extra: bayes
+Requires-Dist: pymc>=5.10; extra == "bayes"
+Requires-Dist: arviz>=0.15; extra == "bayes"
+Requires-Dist: pytensor>=2.18; extra == "bayes"
+Requires-Dist: patsy>=0.5.3; extra == "bayes"
+Requires-Dist: joblib>=1.3; extra == "bayes"
+Requires-Dist: lifelines>=0.27; extra == "bayes"
+Provides-Extra: gam
+Requires-Dist: pygam==0.9.0; extra == "gam"
+Requires-Dist: scipy<=1.10.1; extra == "gam"
+Requires-Dist: numpy<=1.26.4; extra == "gam"
+Requires-Dist: joblib>=1.3; extra == "gam"
+Requires-Dist: lifelines>=0.27; extra == "gam"
+Provides-Extra: all
+Requires-Dist: traj_ps[bayes,deep,gam]; extra == "all"
+
 # TrajPS: Trajectory-Based Propensity Score Modeling
 
 Unified interface & data pipeline for trajectory-informed PS using:

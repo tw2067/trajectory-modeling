@@ -1,0 +1,14 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration name="predict-deep" type="PythonConfigurationType" factoryName="Python">
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/scripts/predict_ps.py" />
+    <option name="PARAMETERS" value="--backend deep --model_path artifacts/deep_cox_binned.pt --data_cfg configs/data.yaml --out data/ps_deep.parquet --export_embeddings" />
+    <option name="ADD_CONTENT_ROOTS" value="true" />
+    <option name="ADD_SOURCE_ROOTS" value="true" />
+    <option name="IS_MODULE_SDK" value="true" />
+    <envs>
+      <env name="PYTHONPATH" value="src" />
+    </envs>
+    <method v="2" />
+  </configuration>
+</component>
