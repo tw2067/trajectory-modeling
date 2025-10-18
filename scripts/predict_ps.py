@@ -1,4 +1,4 @@
-import argparse, os, yaml, numpy as np, pandas as pd
+import argparse, os, yaml, numpy as np, pandas as pd, pickle
 
 # shared data helpers (bins + counting design)
 from traj_ps.data.aggregate import DEFAULT_BIN_W
@@ -10,22 +10,6 @@ from traj_ps.data.counting import (
 
 # simulation (only for demo if paths not provided)
 from traj_ps.data.simulate import simulate_dynamic_static
-
-# ---------- deep ----------
-import torch
-from torch.utils.data import DataLoader
-from traj_ps.data.dual_prep import prepare_samples_dual
-from traj_ps.data.dataset import DualTimelineDS
-from traj_ps.data.collate import dual_pad_collate
-from traj_ps.backends.deep.model import DeepPSDual
-from traj_ps.inference.predict_ps import predict_ps as predict_ps_deep
-
-# ---------- bayesian ----------
-from traj_ps.backends.bayes import BayesianTrajPS, BayesConfig
-
-# ---------- gam ----------
-from traj_ps.backends.gam import GAMTrajPS, GAMConfig
-from traj_ps.backends.gam.align import align_gam_betas_to_bins
 
 
 def _load_yaml(path, fallback):
@@ -42,6 +26,17 @@ def load_or_simulate(dynamic_path, static_path, n_patients=120):
 
 
 def run_deep(args, data_cfg):
+    try:
+        import torch
+        from torch.utils.data import DataLoader
+        from traj_ps.data.dual_prep import prepare_samples_dual
+        from traj_ps.data.dataset import DualTimelineDS
+        from traj_ps.data.collate import dual_pad_collate
+        from traj_ps.backends.deep.model import DeepPSDual
+        from traj_ps.inference.predict_ps import predict_ps as predict_ps_deep
+    except ImportError as e:
+        raise RuntimeError("Deep backend requested but its dependencies are missing.") from e
+
     dyn, sta = load_or_simulate(args.dynamic, args.static, data_cfg.get("n_patients", 120))
     samples = prepare_samples_dual(
         dynamic=dyn, static=sta,
@@ -73,6 +68,12 @@ def run_deep(args, data_cfg):
 
 
 def run_bayes(args, data_cfg, train_cfg):
+    try:
+        from traj_ps.backends.bayes import BayesianTrajPS, BayesConfig
+        from lifelines import CoxTimeVaryingFitter
+    except ImportError as e:
+        raise RuntimeError("Bayesian backend requested but its dependencies are missing.") from e
+
     dyn, sta = load_or_simulate(args.dynamic, args.static, data_cfg.get("n_patients", 120))
     embed_labs = list(data_cfg["embed_features"])
     agg_feats  = list(data_cfg["agg_features"])
@@ -106,14 +107,21 @@ def run_bayes(args, data_cfg, train_cfg):
     counting = build_counting_process(static_df=sta, agg_df=agg_df, traj_aligned_df=traj_aligned, id_col="pid")
 
     # load saved CoxTimeVaryingFitter and score
-    from lifelines import CoxTimeVaryingFitter
-    ctv = CoxTimeVaryingFitter(); ctv.load(args.model_path)
+    with open(args.model_path, "rb") as f:
+        ctv = pickle.load(f)
     counting["ps"] = ctv.predict_partial_hazard(counting)
     counting.to_parquet(args.out, index=False)
     print(f"[bayes] wrote PS to {args.out}")
 
 
 def run_gam(args, data_cfg, train_cfg):
+    try:
+        from traj_ps.backends.gam import GAMTrajPS, GAMConfig
+        from traj_ps.backends.gam.align import align_gam_betas_to_bins
+        from lifelines import CoxTimeVaryingFitter
+    except ImportError as e:
+        raise RuntimeError("GAM backend requested but its dependencies are missing.") from e
+
     dyn, sta = load_or_simulate(args.dynamic, args.static, data_cfg.get("n_patients", 120))
     embed_labs = list(data_cfg["embed_features"])
     agg_feats  = list(data_cfg["agg_features"])
@@ -148,8 +156,9 @@ def run_gam(args, data_cfg, train_cfg):
     counting = build_counting_process(static_df=sta, agg_df=agg_df, traj_aligned_df=gam_aligned, id_col="pid")
 
     # load saved CoxTVF and score
-    from lifelines import CoxTimeVaryingFitter
-    ctv = CoxTimeVaryingFitter(); ctv.load(args.model_path)
+
+    with open(args.model_path, "rb") as f:
+        ctv = pickle.load(f)
     counting["ps"] = ctv.predict_partial_hazard(counting)
     counting.to_parquet(args.out, index=False)
     print(f"[gam] wrote PS to {args.out}")

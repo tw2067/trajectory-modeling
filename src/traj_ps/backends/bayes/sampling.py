@@ -2,7 +2,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Callable
 import numpy as np, pandas as pd, pymc as pm
 # If your environment prefers pytensor: from pytensor import tensor as at
-import aesara.tensor as at  # keep as-is if this is what you use today
+import pytensor.tensor as pt
 # noinspection PyUnresolvedReferences
 from patsy import dmatrix
 SEED = 920
@@ -52,7 +52,7 @@ def _sample_post_trajs_scaled(
     with pm.Model() as m:
         beta  = pm.Normal("beta", mu=0.0, sigma=1.0, shape=X.shape[1])
         sigma = pm.HalfNormal("sigma", 1.0)
-        mu    = at.dot(X, beta)
+        mu    = pt.dot(X, beta)
         pm.Normal("y_obs", mu=mu, sigma=sigma, observed=y_std)
         trace = pm.sample(
             draws=n_samples, tune=tune, chains=4, cores=1,

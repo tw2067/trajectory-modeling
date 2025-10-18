@@ -1,6 +1,4 @@
-import argparse, os, yaml
-import pandas as pd
-import numpy as np
+import argparse, os, yaml, pandas as pd, numpy as np, pickle
 
 # ---------- shared data helpers ----------
 from traj_ps.data.simulate import simulate_dynamic_static
@@ -10,22 +8,6 @@ from traj_ps.data.counting import (
     build_counting_process,
 )
 from traj_ps.data.aggregate import DEFAULT_BIN_W
-
-# ---------- deep backend ----------
-import torch
-from torch.utils.data import DataLoader
-from traj_ps.data.dual_prep import prepare_samples_dual
-from traj_ps.data.dataset import DualTimelineDS
-from traj_ps.data.collate import dual_pad_collate
-from traj_ps.backends.deep.model import DeepPSDual, cox_binned_partial_lik
-
-# ---------- bayesian backend ----------
-from traj_ps.backends.bayes import BayesianTrajPS, BayesConfig
-
-# ---------- gam backend ----------
-from traj_ps.backends.gam import GAMTrajPS, GAMConfig
-from traj_ps.backends.gam.align import align_gam_betas_to_bins  # LOCF align of GAM betas to bins
-
 
 # ------------------------------
 # utility: load YAML or defaults
@@ -41,6 +23,17 @@ def _load_yaml(path, fallback: dict):
 # DEEP: GRU-D (raw) -> gather -> Cox-binned head
 # ------------------------------
 def run_deep(train_cfg, data_cfg, save_dir="artifacts"):
+    try:
+        import torch
+        from torch.utils.data import DataLoader
+        from traj_ps.data.dual_prep import prepare_samples_dual
+        from traj_ps.data.dataset import DualTimelineDS
+        from traj_ps.data.collate import dual_pad_collate
+        from traj_ps.backends.deep.model import DeepPSDual, cox_binned_partial_lik
+        from operator import itemgetter
+    except ImportError as e:
+        raise RuntimeError("Deep backend requested but its dependencies are missing.") from e
+
     dyn, sta = simulate_dynamic_static(n_pat=data_cfg.get("n_patients", 120))
     samples = prepare_samples_dual(
         dynamic=dyn, static=sta,
@@ -52,7 +45,7 @@ def run_deep(train_cfg, data_cfg, save_dir="artifacts"):
     idx = torch.randperm(len(samples)).tolist()
     split = int(0.8 * len(idx))
     tr, va = idx[:split], idx[split:]
-    from operator import itemgetter
+
     train_ds = DualTimelineDS(itemgetter(*tr)(samples) if len(tr) > 1 else [samples[tr[0]]])
     val_ds   = DualTimelineDS(itemgetter(*va)(samples) if len(va) > 1 else [samples[va[0]]])
 
@@ -100,6 +93,12 @@ def run_deep(train_cfg, data_cfg, save_dir="artifacts"):
 # BAYES: posterior feature probs -> align -> CoxTVF
 # ------------------------------
 def run_bayes(train_cfg, data_cfg, save_dir="artifacts"):
+    try:
+        from traj_ps.backends.bayes import BayesianTrajPS, BayesConfig
+        from lifelines import CoxTimeVaryingFitter
+    except ImportError as e:
+        raise RuntimeError("Bayesian backend requested but its dependencies are missing.") from e
+
     dyn, sta = simulate_dynamic_static(n_pat=data_cfg.get("n_patients", 120))
     embed_labs = list(data_cfg["embed_features"])   # e.g., ["eGFR","HbA1c"]
     agg_feats  = list(data_cfg["agg_features"])     # e.g., ["SBP","MedA"]
@@ -139,13 +138,15 @@ def run_bayes(train_cfg, data_cfg, save_dir="artifacts"):
     # build counting-process DF & fit CoxTVF (Lu-style)
     counting = build_counting_process(static_df=sta, agg_df=agg_df, traj_aligned_df=traj_aligned, id_col="pid")
 
-    from lifelines import CoxTimeVaryingFitter
+
     ctv = CoxTimeVaryingFitter()
     ctv.fit(counting, id_col="pid", start_col="start", stop_col="stop", event_col="treatment")
     counting["ps"] = ctv.predict_partial_hazard(counting)
 
     os.makedirs(save_dir, exist_ok=True)
-    ctv.save(os.path.join(save_dir, "bayes_cox_tvf.pkl"))
+    path = os.path.join(save_dir, "bayes_cox_tvf.pkl")  # or "gam_cox_tvf.pkl"
+    with open(path, "wb") as f:
+        pickle.dump(ctv, f, protocol=pickle.HIGHEST_PROTOCOL)
     counting.to_parquet(os.path.join(save_dir, "bayes_ps.parquet"), index=False)
     print(f"Saved CoxTVF to {os.path.join(save_dir,'bayes_cox_tvf.pkl')} and PS to {os.path.join(save_dir,'bayes_ps.parquet')}")
 
@@ -154,6 +155,13 @@ def run_bayes(train_cfg, data_cfg, save_dir="artifacts"):
 # GAM: windowed GAM betas -> align -> CoxTVF
 # ------------------------------
 def run_gam(train_cfg, data_cfg, save_dir="artifacts"):
+    try:
+        from traj_ps.backends.gam import GAMTrajPS, GAMConfig
+        from traj_ps.backends.gam.align import align_gam_betas_to_bins  # LOCF align of GAM betas to bins
+        from lifelines import CoxTimeVaryingFitter
+    except ImportError as e:
+        raise RuntimeError("GAM backend requested but its dependencies are missing.") from e
+
     dyn, sta = simulate_dynamic_static(n_pat=data_cfg.get("n_patients", 120))
     embed_labs = list(data_cfg["embed_features"])   # labs to encode via GAM betas
     agg_feats  = list(data_cfg["agg_features"])     # additional aggregated covariates
@@ -165,7 +173,7 @@ def run_gam(train_cfg, data_cfg, save_dir="artifacts"):
     # compute GAM covariates PER LAB (avoid wide-table NaN issues), then outer-merge on [patient_id,time]
     cfg = GAMConfig(
         window_years=train_cfg.get("window_years", 2.0),
-        n_splines_range=tuple(train_cfg.get("n_splines_range", (4,6))),
+        n_splines_range=train_cfg.get("n_splines_range", (4,6)),
         lam_grid=tuple(train_cfg.get("lam_grid", (0.3, 1.0, 3.0))),
         min_points_per_window=train_cfg.get("min_points_per_window", 6),
         standardize_y=train_cfg.get("standardize_y", True),
@@ -196,13 +204,15 @@ def run_gam(train_cfg, data_cfg, save_dir="artifacts"):
     # counting-process DF & CoxTVF
     counting = build_counting_process(static_df=sta, agg_df=agg_df, traj_aligned_df=gam_aligned, id_col="pid")
 
-    from lifelines import CoxTimeVaryingFitter
+
     ctv = CoxTimeVaryingFitter()
     ctv.fit(counting, id_col="pid", start_col="start", stop_col="stop", event_col="treatment")
     counting["ps"] = ctv.predict_partial_hazard(counting)
 
     os.makedirs(save_dir, exist_ok=True)
-    ctv.save(os.path.join(save_dir, "gam_cox_tvf.pkl"))
+    path = os.path.join(save_dir, "gam_cox_tvf.pkl")
+    with open(path, "wb") as f:
+        pickle.dump(ctv, f, protocol=pickle.HIGHEST_PROTOCOL)
     counting.to_parquet(os.path.join(save_dir, "gam_ps.parquet"), index=False)
     print(f"Saved CoxTVF to {os.path.join(save_dir,'gam_cox_tvf.pkl')} and PS to {os.path.join(save_dir,'gam_ps.parquet')}")
 
