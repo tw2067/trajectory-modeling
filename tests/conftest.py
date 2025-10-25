@@ -3,6 +3,8 @@ import pytest
 import importlib.util
 
 # Keep CI stable/fast
+os.environ["TORCH_NO_JIT_PROFILE"] = "1"
+os.environ.setdefault("PYTHONHASHSEED", "920")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
@@ -11,6 +13,13 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
 def _has(pkg: str) -> bool:
     return importlib.util.find_spec(pkg) is not None
+
+# Use pytest.importorskip (safer than homegrown flags)
+def require_or_skip(pkg, reason):
+    try:
+        return __import__(pkg)
+    except Exception:
+        pytest.skip(reason)
 
 has_torch = _has("torch")
 has_pymc  = _has("pymc")

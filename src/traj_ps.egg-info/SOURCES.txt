@@ -1,3 +1,4 @@
+LICENSE
 README.md
 pyproject.toml
 src/traj_ps/__init__.py
@@ -16,6 +17,7 @@ src/traj_ps/backends/bayes/sampling.py
 src/traj_ps/backends/deep/__init__.py
 src/traj_ps/backends/deep/model.py
 src/traj_ps/backends/deep/econders/grud.py
+src/traj_ps/backends/deep/econders/meanpool.py
 src/traj_ps/backends/deep/econders/tcn.py
 src/traj_ps/backends/deep/econders/transformer.py
 src/traj_ps/backends/deep/heads/cox_binned.py
@@ -24,6 +26,7 @@ src/traj_ps/backends/gam/__init__.py
 src/traj_ps/backends/gam/align.py
 src/traj_ps/backends/gam/features.py
 src/traj_ps/backends/gam/model.py
+src/traj_ps/data/__init__.py
 src/traj_ps/data/aggregate.py
 src/traj_ps/data/collate.py
 src/traj_ps/data/counting.py
@@ -37,6 +40,7 @@ src/traj_ps/inference/predict_ps.py
 tests/test_backend_bayes.py
 tests/test_backend_gam.py
 tests/test_beckend_deep.py
+tests/test_config_and_inference.py
 tests/test_data_prep.py
 tests/test_interfaces.py
 tests/test_predict_ps.py

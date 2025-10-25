@@ -29,8 +29,16 @@ def aggregate_covariates_to_bins(
     bin_map: Dict[str, np.ndarray] = {}
 
     for pid, g in dynamic_df.groupby("pid"):
-        Tmax = float(static_df.loc[static_df.pid == pid, "Tmax"].iloc[0])
-        starts = make_bins(Tmax, bin_width)                  # bin starts
+        if "Tmax" in static_df.columns:
+            Tmax = float(static_df.loc[static_df.pid == pid, "Tmax"].iloc[0])
+
+        elif "time_to_event" in static_df.columns:
+            Tmax = float(static_df.loc[static_df.pid == pid, "time_to_event"].iloc[0])
+        else:
+            raise ValueError("static_df must have 'Tmax' or 'time_to_event' column")
+        
+        # Ensure bins cover up to Tmax (add small epsilon to include Tmax)
+        starts = make_bins(Tmax + 1e-9, bin_width)               # bin starts
         stops  = np.r_[starts[1:], starts[-1] + bin_width]   # bin stops
         bin_map[pid] = starts
 
@@ -125,10 +133,20 @@ def build_counting_process(
     into a single counting-process table for lifelines.CoxTimeVaryingFitter.
     """
     # merge on pid+time: agg_df has start; traj_aligned_df has time
-    base = agg_df.merge(traj_aligned_df, left_on=[id_col, "start"], right_on=[id_col, "time"], how="left")
-    base = base.drop(columns=["time"])
+    if (not traj_aligned_df.empty) and (id_col in traj_aligned_df.columns):
+        base = agg_df.merge(traj_aligned_df, left_on=[id_col, "start"], right_on=[id_col, "time"], how="left")
+        
+    else:
+        base = agg_df.copy()
+
+    if "time" in base.columns:    
+            base = base.drop(columns=["time"])
+
+    # If 'treatment' exists in both, keep the one from agg_df (time-varying)
+    static_cols_to_merge = [col for col in static_df.columns if col != "treatment" or "treatment" not in base.columns]
+
     # attach static covariates
-    static_cols = [c for c in static_df.columns if c not in (id_col,)]
+    static_cols = [c for c in static_cols_to_merge if c not in (id_col,)]
     design = base.merge(static_df[[id_col] + static_cols], on=id_col, how="left")
     # safety: fill any remaining NaNs with 0
     design = design.fillna(0.0)

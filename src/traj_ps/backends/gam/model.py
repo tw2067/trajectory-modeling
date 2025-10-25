@@ -63,7 +63,7 @@ class GAMTrajPS:
 
     # Step 3: fit Cox TV PS on the counting-process design
     def fit(self, counting_process_df: pd.DataFrame) -> "GAMTrajPS":
-        ctv = CoxTimeVaryingFitter()
+        ctv = CoxTimeVaryingFitter(penalizer=1e-4)
         ctv.fit(counting_process_df, id_col="pid", start_col="start", stop_col="stop", event_col="treatment")
         self.ctv_ = ctv
         return self

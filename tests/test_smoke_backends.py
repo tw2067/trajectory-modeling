@@ -37,6 +37,7 @@ def test_deep_smoke():
     r = b["at_risk"] * mask_sel
     loss = cox_binned_partial_lik(eta, y, r)
     assert np.isfinite(loss.item())
+    print('run deep smoke successfully')
 
 # ---------- Bayesian ----------
 @skip_if_no_pymc
@@ -52,7 +53,7 @@ def test_bayes_smoke():
     agg_df, bin_map = aggregate_covariates_to_bins(dyn, sta, agg_features=agg_feats, bin_width=DEFAULT_BIN_W)
 
     # compute posterior feature probabilities on tiny settings for speed
-    cfg = BayesConfig(window_years=2.0, df_basis=4, n_samples=50, tune=50,
+    cfg = BayesConfig(window_years=2.0, df_basis=5, n_samples=250, tune=150,
                       min_points_per_window=3, grid_freq=6)
     bayes = BayesianTrajPS(cfg)
 
@@ -68,10 +69,13 @@ def test_bayes_smoke():
     counting = build_counting_process(static_df=sta, agg_df=agg_df, traj_aligned_df=traj_aligned, id_col="pid")
 
     # fit Cox TVF and ensure PS exists
-    ctv = CoxTimeVaryingFitter()
+
+    ctv = CoxTimeVaryingFitter(penalizer=1e-4)
     ctv.fit(counting, id_col="pid", start_col="start", stop_col="stop", event_col="treatment")
     counting["ps"] = ctv.predict_partial_hazard(counting)
     assert "ps" in counting.columns and np.isfinite(counting["ps"]).all()
+    print('run bayes smoke successfully')
+
 
 # ---------- GAM ----------
 @skip_if_no_pygam
@@ -92,7 +96,7 @@ def test_gam_smoke():
                  .rename(columns={"pid":"patient_id","value": lab})
 
     gam = GAMTrajPS(GAMConfig(
-        window_years=2.0, n_splines_range=(3,4), lam_grid=(0.3,1.0),
+        window_years=2.0, n_splines_range=(4,5), lam_grid=(0.3,1.0),
         min_points_per_window=5, standardize_y=True, cv_splits=0,
         max_iter=2000, spline_order=3, n_jobs=1, verbose=0
     ))
@@ -103,7 +107,41 @@ def test_gam_smoke():
     aligned = align_gam_betas_to_bins(cov, bin_map, pid_col="patient_id", time_col="time")
     counting = build_counting_process(static_df=sta, agg_df=agg_df, traj_aligned_df=aligned, id_col="pid")
 
-    ctv = CoxTimeVaryingFitter()
+    exclude = {"pid", "start", "stop", "treatment"}
+    counting = _clean_counting(counting, exclude, var_tol=1e-6)
+    ctv = CoxTimeVaryingFitter(penalizer=1e-4)
     ctv.fit(counting, id_col="pid", start_col="start", stop_col="stop", event_col="treatment")
+
     counting["ps"] = ctv.predict_partial_hazard(counting)
     assert "ps" in counting.columns and np.isfinite(counting["ps"]).all()
+    print('run gam smoke successfully')
+
+# Drop near-constant / highly collinear numeric covariates to avoid singular Hessian.
+def _clean_counting(df, exclude_cols, var_tol=1e-6):
+    df = df.copy()
+    numeric = [c for c in df.columns if c not in exclude_cols and np.issubdtype(df[c].dtype, np.number)]
+    if not numeric:
+         return df
+    # Drop near-zero variance columns
+    variances = df[numeric].var(ddof=0).fillna(0.0)
+    drop_vars = variances[variances <= var_tol].index.tolist()
+    if drop_vars:
+        df = df.drop(columns=drop_vars)
+        numeric = [c for c in numeric if c not in drop_vars]
+        if not numeric:
+            return df
+    # Ensure numeric design matrix has full column rank by dropping lowest-variance cols iteratively
+    X = df[numeric].to_numpy(dtype=float)
+    rank = np.linalg.matrix_rank(X)
+    while rank < X.shape[1]:
+        # drop the numeric column with smallest variance
+        vars_now = np.nanvar(X, axis=0)
+        idx_drop = int(np.argmin(vars_now))
+        col_drop = numeric[idx_drop]
+        df = df.drop(columns=[col_drop])
+        numeric.pop(idx_drop)
+        if not numeric:
+            break
+        X = df[numeric].to_numpy(dtype=float)
+        rank = np.linalg.matrix_rank(X)
+    return df

@@ -5,6 +5,7 @@ Summary: TrajPS: Trajectory-based propensity score modeling (Deep, Bayesian, GAM
 Author: Tammy Wertheimer
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
+License-File: LICENSE
 Requires-Dist: numpy<2.0,>=1.22
 Requires-Dist: pandas>=1.5
 Requires-Dist: pyyaml>=6.0
@@ -26,6 +27,7 @@ Requires-Dist: joblib>=1.3; extra == "gam"
 Requires-Dist: lifelines>=0.27; extra == "gam"
 Provides-Extra: all
 Requires-Dist: traj_ps[bayes,deep,gam]; extra == "all"
+Dynamic: license-file
 
 # TrajPS: Trajectory-Based Propensity Score Modeling
 

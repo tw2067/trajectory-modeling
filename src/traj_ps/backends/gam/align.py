@@ -28,4 +28,13 @@ def align_gam_betas_to_bins(
                 else:
                     for c in keep_cols: rec[c] = float(dfp.iloc[idx][c])
             rows.append(rec)
-    return pd.DataFrame(rows).sort_values(["pid","time"]).reset_index(drop=True)
+
+    covariates_df = pd.DataFrame(rows).sort_values(["pid","time"]).reset_index(drop=True)
+    tol = 1e-8
+    numeric_cols = covariates_df.select_dtypes(include=["number"]).columns.tolist()
+    low_var_cols = [c for c in numeric_cols if covariates_df[c].var(ddof=0) <= tol]
+    if low_var_cols:
+        # remove them (or log / warn)
+        covariates_df = covariates_df.drop(columns=low_var_cols)
+    return covariates_df
+    

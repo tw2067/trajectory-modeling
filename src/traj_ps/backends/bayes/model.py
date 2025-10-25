@@ -7,7 +7,7 @@ from .pipeline import compute_time_varying_trajectory_covariates_parallel
 @dataclass
 class BayesConfig:
     window_years: float = 2.0
-    df_basis: int = 5
+    df_basis: int = 4
     n_samples: int = 1000
     tune: int = 1000
     min_points_per_window: int = 5

@@ -1,12 +1,14 @@
 import numpy as np, pandas as pd
 DEFAULT_FEATURES = ("eGFR","Creatinine","SBP","DBP","HbA1c","MedA")
 
-def simulate_dynamic_static(n_pat=120, features=DEFAULT_FEATURES):
+def simulate_dynamic_static(n_pat=120, features=DEFAULT_FEATURES, seed=920):
     rows_dyn, rows_sta = [], []
-    rng = np.random.default_rng(920)
+    rng = np.random.default_rng(seed)
+    np.random.seed(seed)
     for i in range(n_pat):
         pid = f"P{i:05d}"
-        T = rng.uniform(2.0, 4.0)
+        T = rng.uniform(5.0, 10.0)
+        trt_flag = rng.random()<0.5
         age, sex, cci = int(rng.integers(45,85)), int(rng.integers(0,2)), int(rng.poisson(2))
         rows_sta.append((pid, age, sex, cci, float(T)))
 
@@ -41,7 +43,7 @@ def simulate_dynamic_static(n_pat=120, features=DEFAULT_FEATURES):
         p = 1 - np.exp(-np.exp(score))
         treated=0; t_start=None
         for gg,pp in zip(grid,p):
-            if treated==0 and rng.random()<pp:
+            if treated==0 and rng.random()<pp and trt_flag:
                 treated=1; t_start=float(gg); break
         if t_start is not None:
             for k,(ppid,tt,fn,val,tr) in enumerate(rows_dyn):
@@ -51,4 +53,10 @@ def simulate_dynamic_static(n_pat=120, features=DEFAULT_FEATURES):
     dynamic = pd.DataFrame(rows_dyn, columns=["pid","time","feature_name","value","treated"]) \
                 .sort_values(["pid","time","feature_name"]).reset_index(drop=True)
     static  = pd.DataFrame(rows_sta, columns=["pid","age","sex","cci","Tmax"]).sort_values("pid")
+
+    treatment = dynamic.groupby("pid")["treated"].max().reset_index().rename(columns={"treated":"treatment"})
+    static = static.merge(treatment, on="pid", how="left")
+
+    time_to_event = dynamic.groupby("pid")["time"].max().reset_index().rename(columns={"time":"time_to_event"})
+    static = static.merge(time_to_event, on="pid", how="left")
     return dynamic, static
