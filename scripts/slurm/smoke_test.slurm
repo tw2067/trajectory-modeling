@@ -11,4 +11,4 @@
 #SBATCH --account=gpu-research
 #SBATCH --partition=gpu-shamir
 
-pytest -q test_smoke_backends.py -s
+pytest -q /home/gaga/tamarw1/trajectory-modeling/tests/test_smoke_backends.py -s
