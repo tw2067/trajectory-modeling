@@ -60,3 +60,244 @@ def simulate_dynamic_static(n_pat=120, features=DEFAULT_FEATURES, seed=920):
     time_to_event = dynamic.groupby("pid")["time"].max().reset_index().rename(columns={"time":"time_to_event"})
     static = static.merge(time_to_event, on="pid", how="left")
     return dynamic, static
+
+
+def simulate_with_known_trajectories(
+    n_pat: int,
+    scenario: str = "linear_decline",
+    treatment_effect_on_slope: float = -0.3,
+    seed: int = 42,
+    **kwargs
+) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+    """
+    Simulate longitudinal data with known trajectory parameters.
+    
+    This extends simulate_dynamic_static() to return ground truth trajectory
+    parameters for validation purposes.
+    
+    Parameters
+    ----------
+    n_pat : int
+        Number of patients to simulate.
+    scenario : str, default="linear_decline"
+        Trajectory pattern to simulate:
+        - "linear_decline": eGFR declines linearly, treatment slows decline
+        - "nonlinear": HbA1c follows quadratic pattern
+        - "heterogeneous": Treatment effect varies by baseline
+    treatment_effect_on_slope : float, default=-0.3
+        Effect of treatment on trajectory slope.
+    seed : int
+        Random seed for reproducibility.
+    **kwargs
+        Additional arguments passed to simulate_dynamic_static().
+    
+    Returns
+    -------
+    dynamic_df : pd.DataFrame
+        Long-format dynamic data with columns: pid, time, feature_name, value, treated.
+    static_df : pd.DataFrame
+        Static covariates with columns: pid, age, sex, cci, treatment, Tmax, time_to_event.
+    ground_truth : dict
+        Dictionary containing:
+        - scenario: str - scenario name
+        - true_slopes: dict[pid, slope] - true slope for each patient
+        - true_intercepts: dict[pid, intercept] - true baseline for each patient
+        - treatment_effect_on_slope: float - known treatment effect
+        - feature_params: dict - per-feature trajectory parameters
+    """
+    np.random.seed(seed)
+    
+    # Generate base data
+    dynamic_df, static_df = simulate_dynamic_static(n_pat=n_pat, seed=seed, **kwargs)
+    
+    # Initialize ground truth storage
+    ground_truth = {
+        'scenario': scenario,
+        'treatment_effect_on_slope': treatment_effect_on_slope,
+        'true_slopes': {},
+        'true_intercepts': {},
+        'feature_params': {}
+    }
+    
+    # Generate trajectory parameters based on scenario
+    if scenario == "linear_decline":
+        ground_truth = _simulate_linear_decline(
+            dynamic_df, static_df, treatment_effect_on_slope, ground_truth
+        )
+    elif scenario == "nonlinear":
+        ground_truth = _simulate_nonlinear(
+            dynamic_df, static_df, treatment_effect_on_slope, ground_truth
+        )
+    elif scenario == "heterogeneous":
+        ground_truth = _simulate_heterogeneous(
+            dynamic_df, static_df, treatment_effect_on_slope, ground_truth
+        )
+    else:
+        raise ValueError(f"Unknown scenario: {scenario}")
+    
+    return dynamic_df, static_df, ground_truth
+
+
+def _simulate_linear_decline(
+    dynamic_df: pd.DataFrame,
+    static_df: pd.DataFrame,
+    treatment_effect: float,
+    ground_truth: dict
+) -> dict:
+    """
+    Simulate linear decline in eGFR, with treatment slowing the decline.
+    
+    Model: eGFR(t) = baseline + slope * t
+    - slope is negative (declining eGFR)
+    - treatment reduces the magnitude of decline (makes slope less negative)
+    """
+    feature_name = "eGFR"
+    
+    # Store per-patient parameters
+    for pid in static_df["pid"].unique():
+        is_treated = static_df.loc[static_df["pid"] == pid, "treatment"].iloc[0]
+        
+        # Baseline eGFR: Normal(60, 15)
+        baseline = np.random.normal(60, 15)
+        
+        # Baseline slope: Normal(-2, 0.5) mL/min/year decline
+        base_slope = np.random.normal(-2, 0.5)
+        
+        # Treatment modifies slope
+        if is_treated:
+            slope = base_slope + treatment_effect  # less negative (slower decline)
+        else:
+            slope = base_slope
+        
+        ground_truth['true_intercepts'][pid] = baseline
+        ground_truth['true_slopes'][pid] = slope
+        
+        # Update dynamic_df with true trajectory
+        mask = (dynamic_df["pid"] == pid) & (dynamic_df["feature_name"] == feature_name)
+        times = dynamic_df.loc[mask, "time"].values
+        
+        # Add noise to observations
+        noise = np.random.normal(0, 3, size=len(times))
+        true_values = baseline + slope * times + noise
+        
+        dynamic_df.loc[mask, "value"] = true_values
+    
+    # Store feature-level parameters
+    ground_truth['feature_params'][feature_name] = {
+        'model': 'linear',
+        'mean_baseline': 60,
+        'mean_slope_control': -2,
+        'mean_slope_treated': -2 + treatment_effect,
+        'noise_std': 3
+    }
+    
+    return ground_truth
+
+
+def _simulate_nonlinear(
+    dynamic_df: pd.DataFrame,
+    static_df: pd.DataFrame,
+    treatment_effect: float,
+    ground_truth: dict
+) -> dict:
+    """
+    Simulate nonlinear (quadratic) trajectory in HbA1c.
+    
+    Model: HbA1c(t) = baseline + b1*t + b2*t^2
+    - Treatment affects both linear and quadratic terms
+    """
+    feature_name = "HbA1c"
+    
+    for pid in static_df["pid"].unique():
+        is_treated = static_df.loc[static_df["pid"] == pid, "treatment"].iloc[0]
+        
+        # Baseline HbA1c: Normal(7.5, 1)
+        baseline = np.random.normal(7.5, 1)
+        
+        # Linear term: slight increase
+        b1 = np.random.normal(0.5, 0.2)
+        
+        # Quadratic term: acceleration
+        b2 = np.random.normal(0.1, 0.05)
+        
+        # Treatment reduces both linear and quadratic growth
+        if is_treated:
+            b1 = b1 - treatment_effect
+            b2 = b2 - treatment_effect * 0.5
+        
+        ground_truth['true_intercepts'][pid] = baseline
+        ground_truth['true_slopes'][pid] = {'b1': b1, 'b2': b2}
+        
+        # Update dynamic_df
+        mask = (dynamic_df["pid"] == pid) & (dynamic_df["feature_name"] == feature_name)
+        times = dynamic_df.loc[mask, "time"].values
+        
+        noise = np.random.normal(0, 0.3, size=len(times))
+        true_values = baseline + b1 * times + b2 * (times ** 2) + noise
+        
+        dynamic_df.loc[mask, "value"] = true_values
+    
+    ground_truth['feature_params'][feature_name] = {
+        'model': 'quadratic',
+        'mean_baseline': 7.5,
+        'mean_b1_control': 0.5,
+        'mean_b2_control': 0.1,
+        'noise_std': 0.3
+    }
+    
+    return ground_truth
+
+
+def _simulate_heterogeneous(
+    dynamic_df: pd.DataFrame,
+    static_df: pd.DataFrame,
+    treatment_effect: float,
+    ground_truth: dict
+) -> dict:
+    """
+    Simulate heterogeneous treatment effects.
+    
+    Treatment effect on eGFR slope varies by baseline eGFR:
+    - Low baseline → larger treatment benefit
+    - High baseline → smaller treatment benefit
+    """
+    feature_name = "eGFR"
+    
+    for pid in static_df["pid"].unique():
+        is_treated = static_df.loc[static_df["pid"] == pid, "treatment"].iloc[0]
+        
+        # Baseline eGFR
+        baseline = np.random.normal(60, 15)
+        
+        # Base slope
+        base_slope = np.random.normal(-2, 0.5)
+        
+        # Heterogeneous treatment effect: stronger for lower baseline
+        if is_treated:
+            # Effect decreases as baseline increases
+            het_effect = treatment_effect * (1 + (60 - baseline) / 30)
+            slope = base_slope + het_effect
+        else:
+            slope = base_slope
+        
+        ground_truth['true_intercepts'][pid] = baseline
+        ground_truth['true_slopes'][pid] = slope
+        
+        # Update dynamic_df
+        mask = (dynamic_df["pid"] == pid) & (dynamic_df["feature_name"] == feature_name)
+        times = dynamic_df.loc[mask, "time"].values
+        
+        noise = np.random.normal(0, 3, size=len(times))
+        true_values = baseline + slope * times + noise
+        
+        dynamic_df.loc[mask, "value"] = true_values
+    
+    ground_truth['feature_params'][feature_name] = {
+        'model': 'heterogeneous_linear',
+        'mean_baseline': 60,
+        'base_treatment_effect': treatment_effect,
+        'heterogeneity_factor': 'baseline_dependent',
+        'noise_std': 3
+    }
+    
+    return ground_truth

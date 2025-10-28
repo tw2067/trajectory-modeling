@@ -7,6 +7,7 @@ from sklearn.model_selection import KFold  # only used if cv_splits > 0
 from scipy.sparse import issparse
 from sklearn.decomposition import PCA
 import pygam.utils as _pgutils
+from typing import Tuple, Optional
 
 SEED = 920
 
@@ -260,6 +261,59 @@ def _process_one_patient(
 
     return recs
 
+
+def _fit_patient_gam(
+    patient_df: pd.DataFrame,
+    n_splines: int = 10,
+    lam: float = 0.6,
+) -> Tuple[pd.DataFrame, dict]:
+    """
+    Fit a GAM for a single patient's time series (value ~ s(time)).
+    Returns (trajectory_df, feature_dict).
+    - trajectory_df columns: pid, time, predicted_value
+    - feature_dict: pid, eGFR_slope, eGFR_intercept
+    """
+    pid = patient_df["pid"].iloc[0]
+    g = patient_df.sort_values("time")
+
+    X = g["time"].to_numpy(dtype=float).reshape(-1, 1)
+    y = g["value"].to_numpy(dtype=float)
+
+    # Require at least 3 points to fit a spline sensibly
+    if len(y) < 3 or len(np.unique(X)) < 2:
+        # Fallback: flat trajectory at first value
+        pred = np.full_like(y, fill_value=y[0], dtype=float)
+        slope = 0.0
+        intercept = float(y[0])
+    else:
+        lam_grid = np.array([lam]) if np.isscalar(lam) else np.array(lam)
+        gam = LinearGAM(s(0, n_splines=n_splines))
+
+        # Use fit if single lambda, gridsearch otherwise
+        if len(lam_grid) == 1:
+            gam.fit(X, y, lam=lam_grid[0])
+        else:
+            gam.gridsearch(X, y, lam=lam_grid)
+            
+        pred = gam.predict(X)
+        # Derivative at last observed time (robust slope proxy)
+        d_pred = gam.derivatives(X).ravel()
+        slope = float(d_pred[-1]) if len(d_pred) else 0.0
+        intercept = float(y[0])  # baseline: first observed value
+
+    traj = pd.DataFrame({
+        "pid": pid,
+        "time": g["time"].to_numpy(dtype=float),
+        "predicted_value": pred.astype(float),
+    })
+
+    feats = {
+        "pid": pid,
+        "eGFR_slope": float(slope),
+        "eGFR_intercept": float(intercept),
+    }
+    return traj, feats
+
 # -----------------------------
 # Public API: compute covariates on sliding windows
 # -----------------------------
@@ -318,6 +372,38 @@ def compute_gam_beta_covariates_adaptive_parallel(
               .sort_values([pids, time_col])
               .reset_index(drop=True))
     return cov_df
+
+
+def extract_gam_trajectories(
+    dynamic_df: pd.DataFrame,
+    feature: str = "eGFR",
+    n_jobs: int = -1,
+    n_splines: int = 10,
+    lam: float = 0.6,
+    min_points: int = 3,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Fit per-patient GAMs for the given feature and return:
+    - features: pid, eGFR_slope, eGFR_intercept
+    - trajectories: pid, time, predicted_value
+    """
+    df = dynamic_df[dynamic_df["feature_name"] == feature].copy()
+    groups = [g for _, g in df.groupby("pid")]
+
+    results = Parallel(n_jobs=n_jobs, prefer="threads")(
+        delayed(_fit_patient_gam)(g, n_splines=n_splines, lam=lam)
+        for g in groups
+        if len(g) >= min_points
+    )
+
+    if not results:
+        return pd.DataFrame(columns=["pid", "eGFR_slope", "eGFR_intercept"]), pd.DataFrame(columns=["pid", "time", "predicted_value"])
+
+    traj_list, feat_list = zip(*results)
+    trajectories = pd.concat(traj_list, ignore_index=True)
+    features = pd.DataFrame(feat_list)
+
+    return features, trajectories
 
 # -----------------------------
 # Optional: PCA compression of beta blocks (fixed width already)
