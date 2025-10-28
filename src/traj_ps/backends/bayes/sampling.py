@@ -29,11 +29,21 @@ def _sample_post_trajs_scaled(
     target_accept: float = 0.95,
     values: str = 'lab_value',
     time_col: str = 'time',
+    *,
+    sampler: str = 'pymc',    # 'pymc' | 'numpyro' | 'nutpie'
+    chains: int = 4,
+    cores: int = 1,
+    progressbar: bool = False,
 ):
     """
     Fit Bayesian spline on a window (time scaled to [0,1]; y standardized), then
     back-transform posterior samples to ORIGINAL units on a uniform grid.
     Returns (time_grid_years, y_samples) with y_samples shape [S, Tgrid].
+
+    sampler:
+      - 'pymc'    -> pm.sample (CPU)
+      - 'numpyro' -> pm.sampling_jax.sample_numpyro_nuts (GPU/CPU via JAX)
+      - 'nutpie'  -> nutpie.compile_pymc_model + nutpie.sample (fast)
     """
     dfw = df_window.sort_values(time_col).copy()
     if len(dfw) < min_points:
@@ -54,11 +64,50 @@ def _sample_post_trajs_scaled(
         sigma = pm.HalfNormal("sigma", 1.0)
         mu    = pt.dot(X, beta)
         pm.Normal("y_obs", mu=mu, sigma=sigma, observed=y_std)
-        trace = pm.sample(
-            draws=n_samples, tune=tune, chains=4, cores=1,
-            target_accept=target_accept, init="jitter+adapt_diag",
-            random_seed=SEED, progressbar=False
-        )
+
+        if sampler == 'numpyro':
+            try:
+                from pymc.sampling_jax import sample_numpyro_nuts
+                trace = sample_numpyro_nuts(
+                    draws=n_samples,
+                    tune=tune,
+                    chains=chains,
+                    target_accept=target_accept,
+                    random_seed=SEED,
+                    progressbar=progressbar,
+                )
+            except Exception as e:
+                # Fallback to PyMC CPU sampler
+                trace = pm.sample(
+                    draws=n_samples, tune=tune, chains=chains, cores=cores,
+                    target_accept=target_accept, init="jitter+adapt_diag",
+                    random_seed=SEED, progressbar=progressbar
+                )
+        elif sampler == 'nutpie':
+            try:
+                import nutpie
+                compiled = nutpie.compile_pymc_model(m)
+                trace = nutpie.sample(
+                    compiled,
+                    chains=chains,
+                    draws=n_samples,
+                    tune=tune,
+                    target_accept=target_accept,
+                    seed=SEED,
+                    progressbar=progressbar,
+                )
+            except Exception:
+                trace = pm.sample(
+                    draws=n_samples, tune=tune, chains=chains, cores=cores,
+                    target_accept=target_accept, init="jitter+adapt_diag",
+                    random_seed=SEED, progressbar=progressbar
+                )
+        else:
+            trace = pm.sample(
+                draws=n_samples, tune=tune, chains=chains, cores=cores,
+                target_accept=target_accept, init="jitter+adapt_diag",
+                random_seed=SEED, progressbar=progressbar
+            )
 
     post = trace.posterior["beta"].stack(sample=("chain","draw"))
     if "sample" not in post.dims or post.dims[0] != "sample":

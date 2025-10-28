@@ -10,9 +10,18 @@ def _window_worker(
     df_basis=5, n_samples=1000, tune=1000, min_points=5, grid_freq=12,
     class_func=flags_from_traj, values='lab_value', time_col='time',
     traj_types=('prolonged_nonprogression','linear_decline','nonlinear'),
+    *,
+    sampler: str = 'pymc',
+    chains: int = 4,
+    cores: int = 1,
+    progressbar: bool = False,
+
 ):
-    tg, ys = _sample_post_trajs_scaled(window_df, df_basis, n_samples, tune, min_points, grid_freq,
-                                       0.95, values, time_col)
+    tg, ys = _sample_post_trajs_scaled(
+        window_df, df_basis, n_samples, tune, min_points, grid_freq,
+        0.95, values, time_col,
+        sampler=sampler, chains=chains, cores=cores, progressbar=progressbar
+    )
     return _posterior_feature_probs_from_samples(
         ys, tg, flat_thr, decline_thr, nonlinear_gap, class_func, traj_types
     )
@@ -26,6 +35,11 @@ def compute_time_varying_trajectory_covariates_parallel(
     class_func=flags_from_traj, pids='patient_id', values='lab_value',
     time_col='time', traj_types=('prolonged_nonprogression','linear_decline','nonlinear'),
     verbose: int = 0,
+    *,
+    sampler: str = 'pymc',
+    chains: int = 4,
+    cores: int = 1,
+    progressbar: bool = False,
 ) -> pd.DataFrame:
     """
     For each (pid, anchor time), use the previous window_years to compute
@@ -40,11 +54,15 @@ def compute_time_varying_trajectory_covariates_parallel(
             if len(win) >= min_points_per_window:
                 windows.append((pid, t, win[[pids, time_col, values]].copy()))
 
-    results = Parallel(n_jobs=n_jobs, backend="loky", verbose=verbose)(
+    # Avoid GPU contention
+    nj_eff = 1 if sampler in ("numpyro", "nutpie") else n_jobs
+
+    results = Parallel(n_jobs=nj_eff, backend="loky", verbose=verbose)(
         delayed(_window_worker)(
             win_df, flat_thr, decline_thr, nonlinear_gap,
             df_basis, n_samples, tune, min_points_per_window, grid_freq,
-            class_func, values, time_col, traj_types
+            class_func, values, time_col, traj_types,
+            sampler=sampler, chains=chains, cores=cores, progressbar=progressbar
         )
         for (_, _, win_df) in windows
     )
@@ -55,3 +73,4 @@ def compute_time_varying_trajectory_covariates_parallel(
         rec.update(probs)
         rows.append(rec)
     return pd.DataFrame(rows)
+

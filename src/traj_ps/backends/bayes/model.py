@@ -1,15 +1,17 @@
 from __future__ import annotations
 import pandas as pd
 from dataclasses import dataclass
+from typing import Optional, Dict, Any, Literal
 from lifelines import CoxTimeVaryingFitter
 from .pipeline import compute_time_varying_trajectory_covariates_parallel
+
 
 @dataclass
 class BayesConfig:
     window_years: float = 2.0
     df_basis: int = 4
     n_samples: int = 1000
-    tune: int = 1000
+    tune: int = 500
     min_points_per_window: int = 5
     grid_freq: int = 12
     flat_thr: float = -1.0
@@ -18,11 +20,32 @@ class BayesConfig:
     pids: str = "patient_id"
     values: str = "lab_value"
     time_col: str = "time"
+    use_gpu: bool = True
+    sampler: Literal["pymc", "numpyro", "nutpie"] = "pymc"
+    chains: int = 1
+    cores: int = 1
+    n_jobs: int = -1
+    progressbar: bool = False
 
 class BayesianTrajPS:
     name = "bayes"
     def __init__(self, cfg: BayesConfig | None = None):
         self.cfg = cfg or BayesConfig()
+        # Auto-select GPU sampler if requested
+        if self.cfg.use_gpu and self.cfg.sampler == "pymc":
+            # Prefer numpyro if installed; otherwise try nutpie
+            try:
+                import pymc.sampling_jax  # noqa: F401
+                self.cfg.sampler = "numpyro"
+                print("Using 'numpyro' sampler for Bayesian trajectory modeling.")
+            except Exception:
+                try:
+                    import nutpie  # noqa: F401
+                    self.cfg.sampler = "nutpie"
+                    print("Using 'nutpie' sampler for Bayesian trajectory modeling.")
+                except Exception:
+                    self.cfg.sampler = "pymc"
+                    print("Falling back to 'pymc' sampler for Bayesian trajectory modeling.")
         self.ctv_ = None
 
     # Optional: no training needed to get embeddings; leave fit as no-op or Cox fit
@@ -56,6 +79,10 @@ class BayesianTrajPS:
             pids=self.cfg.pids,
             values=self.cfg.values,
             time_col=self.cfg.time_col,
+            sampler=self.cfg.sampler,
+            chains=self.cfg.chains,
+            cores=self.cfg.cores,
+            progressbar=self.cfg.progressbar,
         )
 
     def ps(self, counting_process_df: pd.DataFrame) -> pd.DataFrame:
