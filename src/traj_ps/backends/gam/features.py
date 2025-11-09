@@ -291,14 +291,42 @@ def _fit_patient_gam(
 
         # Use fit if single lambda, gridsearch otherwise
         if len(lam_grid) == 1:
-            gam.fit(X, y, lam=lam_grid[0])
+            gam.lam = lam_grid[0]
+            gam.fit(X, y)
         else:
             gam.gridsearch(X, y, lam=lam_grid)
             
         pred = gam.predict(X)
-        # Derivative at last observed time (robust slope proxy)
-        d_pred = gam.derivatives(X).ravel()
-        slope = float(d_pred[-1]) if len(d_pred) else 0.0
+        
+        # Compute derivative at last observed time (robust slope proxy)
+        # pyGAM doesn't have .derivatives() - use numerical derivative via partial_dependence
+        try:
+            # Get last time point
+            t_last = X[-1, 0]
+            # Small step for numerical derivative (0.01 of time range)
+            dt = 0.01 * (X.max() - X.min()) if X.max() > X.min() else 0.01
+            
+            # Evaluate GAM at t_last and t_last + dt
+            X_last = np.array([[t_last]])
+            X_next = np.array([[t_last + dt]])
+            
+            y_last = gam.predict(X_last)[0]
+            y_next = gam.predict(X_next)[0]
+            
+            # Numerical derivative: (f(t+dt) - f(t)) / dt
+            slope = float((y_next - y_last) / dt)
+        except Exception as e:
+            # If derivative computation fails, fallback to simple linear fit on last few points
+            print(f"[WARNING] GAM derivative failed for patient {pid}: {e}, using linear fallback")
+            if len(X) >= 2:
+                from scipy.stats import linregress
+                # Use last 3 points or all if fewer
+                n_tail = min(3, len(X))
+                slope_fallback, _, _, _, _ = linregress(X[-n_tail:, 0], y[-n_tail:])
+                slope = float(slope_fallback)
+            else:
+                slope = 0.0
+        
         intercept = float(y[0])  # baseline: first observed value
 
     traj = pd.DataFrame({

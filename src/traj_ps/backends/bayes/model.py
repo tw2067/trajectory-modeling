@@ -22,10 +22,13 @@ class BayesConfig:
     time_col: str = "time"
     use_gpu: bool = True
     sampler: Literal["pymc", "numpyro", "nutpie"] = "pymc"
-    chains: int = 1
+    chains: int = 4
+    chain_method: Literal["parallel","vectorized","sequential"] = "vectorized"
     cores: int = 1
     n_jobs: int = -1
     progressbar: bool = False
+    available_gpus: list[int] | None = None
+    target_accept: Optional[float] = 0.95
 
 class BayesianTrajPS:
     name = "bayes"
@@ -35,7 +38,7 @@ class BayesianTrajPS:
         if self.cfg.use_gpu and self.cfg.sampler == "pymc":
             # Prefer numpyro if installed; otherwise try nutpie
             try:
-                import pymc.sampling_jax  # noqa: F401
+                import pymc.sampling.jax  # noqa: F401
                 self.cfg.sampler = "numpyro"
                 print("Using 'numpyro' sampler for Bayesian trajectory modeling.")
             except Exception:
@@ -82,6 +85,7 @@ class BayesianTrajPS:
             sampler=self.cfg.sampler,
             chains=self.cfg.chains,
             cores=self.cfg.cores,
+            target_accept=self.cfg.target_accept,
             progressbar=self.cfg.progressbar,
         )
 

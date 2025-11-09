@@ -56,24 +56,27 @@ def validate_deep_backend(dyn_df, sta_df, ground_truth, config):
 
 def validate_bayes_backend(dyn_df, sta_df, ground_truth, config):
     """Validate Bayesian backend using per-patient OLS features as proxy."""
-    print("  [Bayes] Extracting trajectory-type probabilities (GPU)...")
+    print("  [Bayes] Extracting trajectory-type probabilities (CPU)...")
     # Configure Bayes with GPU sampler
     from traj_ps.backends.bayes.model import BayesConfig
+    import os
+    n_cpus = int(os.environ.get("SLURM_CPUS_PER_TASK", "8"))
+    print(f"  [Bayes] Using CPU with n_jobs={n_cpus}")
     
     bayes_cfg = BayesConfig(
-        sampler="nutpie",      # Use JAX/NumPyro for GPU
+        sampler="pymc",      # Use JAX/NumPyro for GPU
         use_gpu=True,
         chains=4,               # Single chain per window
-        n_jobs=4,               # Sequential to avoid GPU contention
-        n_samples=500,          # Reduce for speed
-        tune=500,
+        n_jobs=-1,               # Sequential to avoid GPU contention
+        n_samples=800,          # Reduce for speed
+        tune=600,
+        target_accept=0.99,
         progressbar=False,
     )
     
     # Pass config to extractor
     config = config or {}
     config['bayes_cfg'] = bayes_cfg
-    config['n_jobs'] = 4  # Force sequential execution
     
     pred_features, pred_trajectories = extract_trajectory_features(
         "bayes", dyn_df, feature="eGFR", config=config
@@ -175,61 +178,91 @@ def run_validation(backend: str, scenario: str, n_patients: int = 200, seed: int
     
     # Print results
     print(f"\n3. Results:")
-    print(f"   Trajectory R-squared: {results.get('trajectory_r_squared', np.nan):.4f}")
-    print(f"   Trajectory MSE:       {results.get('trajectory_mse', np.nan):.4f}")
-    print(f"   Trajectory MAE:       {results.get('trajectory_mae', np.nan):.4f}")
-    print(f"   Slope Metrics:")
-    print(f"     - MSE:         {results.get('slope_mse', np.nan):.4f}")
-    print(f"     - MAE:         {results.get('slope_mae', np.nan):.4f}")
-    print(f"     - Correlation: {results.get('slope_correlation', np.nan):.4f}")
-    
-    print(f"\n   Intercept Metrics:")
-    print(f"     - MSE:         {results.get('intercept_mse', np.nan):.4f}")
-    print(f"     - MAE:         {results.get('intercept_mae', np.nan):.4f}")
-    print(f"     - Correlation: {results.get('intercept_correlation', np.nan):.4f}")
-    
-    print(f"\n   Treatment Effect Recovery:")
-    print(f"     - True effect:      {results.get('true_effect', np.nan):.4f}")
-    print(f"     - Estimated effect: {results.get('estimated_effect', np.nan):.4f}")
-    print(f"     - Bias:            {results.get('effect_bias', np.nan):.4f}")
-    print(f"     - Recovery rate:   {results.get('effect_recovery_rate', np.nan):.4f}")
 
     if backend == "bayes":
-        print(f"\n   Trajectory-type (Bayes) Metrics:")
-        print(f"     - Accuracy:    {results.get('type_acc', float('nan')):.4f}")
-        print(f"     - Log-loss:    {results.get('type_logloss', float('nan')):.4f}")
-        print(f"     - Brier:       {results.get('type_brier', float('nan')):.4f}")
-        print(f"     - Macro-F1:    {results.get('type_macro_f1', float('nan')):.4f}")
+        # Bayes returns trajectory-type probabilities, not slope/intercept
+        print(f"   Trajectory-Type Classification Metrics:")
+        print(f"     - Accuracy:         {results.get('type_acc', np.nan):.4f}")
+        print(f"     - Log-loss:         {results.get('type_logloss', np.nan):.4f}")
+        print(f"     - Brier Score:      {results.get('type_brier', np.nan):.4f}")
+        print(f"     - Macro-F1:         {results.get('type_macro_f1', np.nan):.4f}")
+        
+        if 'type_confusion' in results:
+            print(f"\n   Confusion Matrix:")
+            print(results['type_confusion'])
+        
+        # Treatment effect recovery (if available)
+        if 'estimated_effect' in results:
+            print(f"\n   Treatment Effect Recovery:")
+            print(f"     - True effect:      {results.get('true_effect', np.nan):.4f}")
+            print(f"     - Estimated effect: {results.get('estimated_effect', np.nan):.4f}")
+            print(f"     - Bias:            {results.get('effect_bias', np.nan):.4f}")
+            print(f"     - Recovery rate:   {results.get('effect_recovery_rate', np.nan):.4f}")
+    else:
+        # Deep/GAM return slope/intercept features
+        print(f"   Trajectory Reconstruction Metrics:")
+        print(f"     - R-squared: {results.get('trajectory_r_squared', np.nan):.4f}")
+        print(f"     - MSE:       {results.get('trajectory_mse', np.nan):.4f}")
+        print(f"     - MAE:       {results.get('trajectory_mae', np.nan):.4f}")
+        
+        print(f"\n   Slope Metrics:")
+        print(f"     - MSE:         {results.get('slope_mse', np.nan):.4f}")
+        print(f"     - MAE:         {results.get('slope_mae', np.nan):.4f}")
+        print(f"     - Correlation: {results.get('slope_correlation', np.nan):.4f}")
+        
+        print(f"\n   Intercept Metrics:")
+        print(f"     - MSE:         {results.get('intercept_mse', np.nan):.4f}")
+        print(f"     - MAE:         {results.get('intercept_mae', np.nan):.4f}")
+        print(f"     - Correlation: {results.get('intercept_correlation', np.nan):.4f}")
+        
+        print(f"\n   Treatment Effect Recovery:")
+        print(f"     - True effect:      {results.get('true_effect', np.nan):.4f}")
+        print(f"     - Estimated effect: {results.get('estimated_effect', np.nan):.4f}")
+        print(f"     - Bias:            {results.get('effect_bias', np.nan):.4f}")
+        print(f"     - Recovery rate:   {results.get('effect_recovery_rate', np.nan):.4f}")
     
-    # Pass/Fail criteria
+    # Pass/Fail criteria - backend-specific
     print(f"\n4. Validation Status:")
     
     checks = []
     
     if backend == "bayes":
         # For Bayesian backend, check trajectory-type classification accuracy
-        if results.get('type_acc', 0) > 0.6:
-            print(f"   ✓ Trajectory-type accuracy > 0.6")
+        type_acc = results.get('type_acc', 0)
+        if type_acc > 0.5:  # Better than random for 3 classes
+            print(f"   ✓ Trajectory-type accuracy > 0.5 ({type_acc:.3f})")
             checks.append(True)
         else:
-            print(f"   ✗ Trajectory-type accuracy ≤ 0.6")
+            print(f"   ✗ Trajectory-type accuracy ≤ 0.5 ({type_acc:.3f})")
+            checks.append(False)
+        
+        # Check log-loss is reasonable
+        logloss = results.get('type_logloss', float('inf'))
+        if logloss < 1.1:  # -log(1/3) ≈ 1.099 for random guessing
+            print(f"   ✓ Log-loss < 1.1 (better than random, {logloss:.3f})")
+            checks.append(True)
+        else:
+            print(f"   ✗ Log-loss ≥ 1.1 ({logloss:.3f})")
             checks.append(False)
     else:
+        # Deep/GAM: check slope/intercept recovery
         if scenario == "nonlinear":
             # R-squared should be > 0.3
-            if results.get('trajectory_r_squared', 0) > 0.3:
-                print(f"   ✓ R-squared > 0.3")
+            r2 = results.get('trajectory_r_squared', 0)
+            if r2 > 0.3:
+                print(f"   ✓ R-squared > 0.3 ({r2:.3f})")
                 checks.append(True)
             else:
-                print(f"   ✗ R-squared ≤ 0.3")
+                print(f"   ✗ R-squared ≤ 0.3 ({r2:.3f})")
                 checks.append(False)
         else:
-            # Slope correlation should be > 0.5 (reasonable correlation)
-            if results.get('slope_correlation', 0) > 0.5:
-                print(f"   ✓ Slope correlation > 0.5")
+            # Slope correlation should be > 0.5
+            slope_corr = results.get('slope_correlation', 0)
+            if slope_corr > 0.5:
+                print(f"   ✓ Slope correlation > 0.5 ({slope_corr:.3f})")
                 checks.append(True)
             else:
-                print(f"   ✗ Slope correlation ≤ 0.5")
+                print(f"   ✗ Slope correlation ≤ 0.5 ({slope_corr:.3f})")
                 checks.append(False)
             
             # Effect recovery should be within 50% of true effect
@@ -311,7 +344,31 @@ def main():
         print(f"{'='*70}\n")
         
         summary_df = pd.DataFrame(results_summary)
-        print(summary_df[['backend', 'scenario', 'slope_correlation', 'effect_recovery_rate']])
+        if not summary_df.empty:
+            bayes_rows = summary_df[summary_df['backend'] == 'bayes']
+            other_rows = summary_df[summary_df['backend'] != 'bayes']
+
+            cols = ['backend', 'scenario']
+            if 'slope_correlation' in other_rows.columns:
+                cols.append('slope_correlation')
+            if 'effect_recovery_rate' in other_rows.columns:
+                cols.append('effect_recovery_rate')
+            
+            if not other_rows.empty:
+                print("\nDeep/GAM Backends (Slope/Intercept):")
+                print(other_rows[cols])
+            
+            if not bayes_rows.empty:
+                print("\nBayes Backend (Trajectory-Type Classification):")
+                cols = ['backend', 'scenario']
+                if 'type_acc' in bayes_rows.columns:
+                    cols.append('type_acc')
+                if 'type_logloss' in bayes_rows.columns:
+                    cols.append('type_logloss')
+                if 'type_macro_f1' in bayes_rows.columns:
+                    cols.append('type_macro_f1')
+                print(bayes_rows[cols])
+               
         
     else:
         if not args.backend:

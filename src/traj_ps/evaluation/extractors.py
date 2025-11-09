@@ -284,20 +284,22 @@ def extract_features_bayes(
       - features: pid + trajtype_*_prob columns (no slope/intercept)
       - trajectories: empty DataFrame (we don't reconstruct for Bayes)
     """
+    from traj_ps.backends.bayes.model import BayesConfig
+    from traj_ps.backends.bayes.pipeline import compute_time_varying_trajectory_covariates_parallel
     cfg = cfg or BayesConfig()
-    bayes = BayesianTrajPS(cfg=cfg)
-
-    # Build the expected long table for the target feature
+    
+    # Prepare data
     lab_long = dynamic_df[dynamic_df["feature_name"] == feature][["pid", "time", "value"]].rename(
-        columns={"pid": cfg.pids if hasattr(cfg, "pids") else "pid",
-                 "time": cfg.time_col if hasattr(cfg, "time_col") else "time",
-                 "value": cfg.values if hasattr(cfg, "values") else "value"}
+        columns={
+            "pid": cfg.pids,
+            "time": cfg.time_col,
+            "value": cfg.values
+        }
     ).copy()
 
-    embed_out = bayes.embed(lab_long)
-
-    # Import pipeline function with sampler support
-    from traj_ps.backends.bayes.pipeline import compute_time_varying_trajectory_covariates_parallel
+    print(cfg.sampler)
+    
+    # Call pipeline WITH the sampler config
     prob_feats = compute_time_varying_trajectory_covariates_parallel(
         lab_df=lab_long,
         window_years=cfg.window_years,
@@ -313,17 +315,20 @@ def extract_features_bayes(
         pids=cfg.pids,
         values=cfg.values,
         time_col=cfg.time_col,
-        sampler=cfg.sampler,           # Pass sampler
-        chains=cfg.chains,              # Pass chains
-        cores=cfg.cores,                # Pass cores
+        sampler=cfg.sampler,
+        chains=cfg.chains,
+        cores=cfg.cores,
         progressbar=cfg.progressbar,
+        chain_method=cfg.chain_method,
+        target_accept=cfg.target_accept,
+        available_gpus=cfg.available_gpus,
     )
-
-    # Ensure 'pid' exists; if not, return empty with only pid
-    if "pid" not in prob_feats.columns:
-        prob_feats = pd.DataFrame({"pid": dynamic_df["pid"].unique()})
-
-    # No trajectory reconstruction for Bayes
+    
+    # Ensure 'pid' column
+    if cfg.pids in prob_feats.columns and "pid" not in prob_feats.columns:
+        prob_feats = prob_feats.rename(columns={cfg.pids: "pid"})
+    
+    # No trajectories for Bayes
     empty_trajs = pd.DataFrame(columns=["pid", "time", "predicted_value"])
     return prob_feats, empty_trajs
 

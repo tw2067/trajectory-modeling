@@ -30,10 +30,11 @@ def _sample_post_trajs_scaled(
     values: str = 'lab_value',
     time_col: str = 'time',
     *,
-    sampler: str = 'pymc',    # 'pymc' | 'numpyro' | 'nutpie'
+    sampler: str = 'pymc', # 'pymc' | 'numpyro' | 'nutpie'
     chains: int = 4,
     cores: int = 1,
     progressbar: bool = False,
+    chain_method: str = "vectorized", # 'parallel'|'vectorized'
 ):
     """
     Fit Bayesian spline on a window (time scaled to [0,1]; y standardized), then
@@ -65,26 +66,28 @@ def _sample_post_trajs_scaled(
         mu    = pt.dot(X, beta)
         pm.Normal("y_obs", mu=mu, sigma=sigma, observed=y_std)
 
-        if sampler == 'numpyro':
+        if sampler in ("numpyro", "blackjax"):
             try:
-                from pymc.sampling_jax import sample_numpyro_nuts
-                trace = sample_numpyro_nuts(
+                import pymc.sampling.jax as sj
+                import jax
+                fn =  sj.sample_numpyro_nuts if sampler == "numpyro" else sj.sample_blackjax_nuts
+                trace = fn(
                     draws=n_samples,
                     tune=tune,
                     chains=chains,
                     target_accept=target_accept,
                     random_seed=SEED,
                     progressbar=progressbar,
+                    chain_method=chain_method,
                 )
+                print(f"[INFO] Using JAX sampler: {sampler}")
             except Exception as e:
                 # Fallback to PyMC CPU sampler
-                trace = pm.sample(
-                    draws=n_samples, tune=tune, chains=chains, cores=cores,
-                    target_accept=target_accept, init="jitter+adapt_diag",
-                    random_seed=SEED, progressbar=progressbar
-                )
-        elif sampler == 'nutpie':
+                trace = None
+                print(f"[WARNING] JAX sampler ({sampler}) unavailable: {e}. Falling back to CPU.")
+        if sampler == 'nutpie' or (sampler in ("numpyro", "blackjax") and trace is None):
             try:
+                print(f"[DEBUG] Attempting Nutpie sampling...")
                 import nutpie
                 compiled = nutpie.compile_pymc_model(m)
                 trace = nutpie.sample(
@@ -96,7 +99,11 @@ def _sample_post_trajs_scaled(
                     seed=SEED,
                     progressbar=progressbar,
                 )
+                print("[INFO] Using nutpie sampler (CPU)")
+                print(f"[DEBUG] Nutpie succeeded!")
             except Exception:
+                print(f"[WARNING] Nutpie sampling failed: {e}")
+                print("[INFO] Using PyMC sampler (CPU)")
                 trace = pm.sample(
                     draws=n_samples, tune=tune, chains=chains, cores=cores,
                     target_accept=target_accept, init="jitter+adapt_diag",
