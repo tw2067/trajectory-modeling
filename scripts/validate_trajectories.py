@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import yaml
 from traj_ps.evaluation.extractors import extract_trajectory_features
+import traceback
 
 
 """
@@ -68,8 +69,8 @@ def validate_bayes_backend(dyn_df, sta_df, ground_truth, config):
         use_gpu=True,
         chains=4,               # Single chain per window
         n_jobs=-1,               # Sequential to avoid GPU contention
-        n_samples=800,          # Reduce for speed
-        tune=600,
+        n_samples=400,          # Reduce for speed
+        tune=700,
         target_accept=0.99,
         progressbar=False,
     )
@@ -78,22 +79,28 @@ def validate_bayes_backend(dyn_df, sta_df, ground_truth, config):
     config = config or {}
     config['bayes_cfg'] = bayes_cfg
     
-    pred_features, pred_trajectories = extract_trajectory_features(
+    try:
+        pred_features, pred_trajectories = extract_trajectory_features(
         "bayes", dyn_df, feature="eGFR", config=config
     )
-    
-    metrics = compare_trajectories(
+
+        metrics = compare_trajectories(
         pred_features, ground_truth,
         dynamic_df=dyn_df,
         predicted_trajectories=pred_trajectories
-    )
+     )
     
-    effect_metrics = compute_treatment_effect_recovery(
+        effect_metrics = compute_treatment_effect_recovery(
         pred_features.merge(sta_df[['pid', 'treatment']], on='pid'),
         ground_truth
-    )
+        )
+        return {**metrics, **effect_metrics}
+
+    except Exception as e:
+        print(f"  [ERROR] Exception during Bayes validation: {e}")
+        traceback.print_exc()
+        return {}
     
-    return {**metrics, **effect_metrics}
 
 
 def validate_gam_backend(dyn_df, sta_df, ground_truth, config):
@@ -282,6 +289,39 @@ def run_validation(backend: str, scenario: str, n_patients: int = 200, seed: int
     return results
 
 
+def print_summary_table(results_summary_):
+    print(f"\n\n{'='*70}")
+    print("SUMMARY")
+    print(f"{'='*70}\n")
+
+    summary_df = pd.DataFrame(results_summary_)
+    if not summary_df.empty:
+        bayes_rows = summary_df[summary_df['backend'] == 'bayes']
+        other_rows = summary_df[summary_df['backend'] != 'bayes']
+
+        cols = ['backend', 'scenario']
+        if 'slope_correlation' in other_rows.columns:
+            cols.append('slope_correlation')
+        if 'effect_recovery_rate' in other_rows.columns:
+            cols.append('effect_recovery_rate')
+        
+        if not other_rows.empty:
+            print("\nDeep/GAM Backends (Slope/Intercept):")
+            print(other_rows[cols])
+        
+        if not bayes_rows.empty:
+            print("\nBayes Backend (Trajectory-Type Classification):")
+            cols = ['backend', 'scenario']
+            if 'type_acc' in bayes_rows.columns:
+                cols.append('type_acc')
+            if 'type_logloss' in bayes_rows.columns:
+                cols.append('type_logloss')
+            if 'type_macro_f1' in bayes_rows.columns:
+                cols.append('type_macro_f1')
+            print(bayes_rows[cols])
+
+
+
 def main():
     parser = argparse.ArgumentParser(description="Validate trajectory extraction backends")
     parser.add_argument(
@@ -300,6 +340,19 @@ def main():
         action="store_true",
         help="Test all backends on all scenarios"
     )
+
+    parser.add_argument(
+        "--all-scenarios",
+        action="store_true",
+        help="Test all scenarios for the specified backend"
+    )
+
+    parser.add_argument(
+        "--all-backends",
+        action="store_true",
+        help="Test all backends for the specified scenario"
+    )
+
     parser.add_argument(
         "--n-patients",
         type=int,
@@ -337,37 +390,54 @@ def main():
                         'scenario': scenario,
                         **result
                     })
-        
         # Print summary table
-        print(f"\n\n{'='*70}")
-        print("SUMMARY")
-        print(f"{'='*70}\n")
-        
-        summary_df = pd.DataFrame(results_summary)
-        if not summary_df.empty:
-            bayes_rows = summary_df[summary_df['backend'] == 'bayes']
-            other_rows = summary_df[summary_df['backend'] != 'bayes']
+        print_summary_table(results_summary)
 
-            cols = ['backend', 'scenario']
-            if 'slope_correlation' in other_rows.columns:
-                cols.append('slope_correlation')
-            if 'effect_recovery_rate' in other_rows.columns:
-                cols.append('effect_recovery_rate')
-            
-            if not other_rows.empty:
-                print("\nDeep/GAM Backends (Slope/Intercept):")
-                print(other_rows[cols])
-            
-            if not bayes_rows.empty:
-                print("\nBayes Backend (Trajectory-Type Classification):")
-                cols = ['backend', 'scenario']
-                if 'type_acc' in bayes_rows.columns:
-                    cols.append('type_acc')
-                if 'type_logloss' in bayes_rows.columns:
-                    cols.append('type_logloss')
-                if 'type_macro_f1' in bayes_rows.columns:
-                    cols.append('type_macro_f1')
-                print(bayes_rows[cols])
+    elif args.all_scenarios:
+        results_summary = []
+
+        # Run all scenarios for specified backend
+        backends = [args.backend]
+        scenarios = ["linear_decline", "nonlinear", "heterogeneous"]
+        
+        for scenario in scenarios:
+            result = run_validation(
+                backend=args.backend,
+                scenario=scenario,
+                n_patients=args.n_patients,
+                seed=args.seed
+            )
+            if result:
+                results_summary.append({
+                    'backend': args.backend,
+                    'scenario': scenario,
+                    **result
+                })
+        # Print summary table
+        print_summary_table(results_summary)
+
+    elif args.all_backends:
+        results_summary = []
+
+        # Run all backends for specified scenario
+        backends = ["deep", "bayes", "gam"]
+        scenarios = [args.scenario]
+        
+        for backend in backends:
+            result = run_validation(
+                backend=backend,
+                scenario=args.scenario,
+                n_patients=args.n_patients,
+                seed=args.seed
+            )
+            if result:
+                results_summary.append({
+                    'backend': backend,
+                    'scenario': args.scenario,
+                    **result
+                })
+        # Print summary table
+        print_summary_table(results_summary)
                
         
     else:

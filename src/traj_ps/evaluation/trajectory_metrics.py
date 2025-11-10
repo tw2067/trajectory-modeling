@@ -59,6 +59,7 @@ def _compute_classification_metrics(
             'type_macro_f1': np.nan,
             'type_confusion': None,
         }
+
     
     true_types = ground_truth['trajectory_types']  # Series: pid -> type label
     
@@ -75,32 +76,45 @@ def _compute_classification_metrics(
             'type_confusion': None,
         }
     
+
+    
     # Extract class labels from column names
     class_labels = sorted([c.replace('trajtype_', '').replace('_prob', '') for c in prob_cols])
 
-    # Convert true_types to DataFrame if it's a dict or Series
+    # Convert to DataFrame - wrap in try/except to see the actual error
     if isinstance(true_types, dict):
-        true_types_df = pd.DataFrame.from_dict(true_types, orient='index', columns=['true_type'])
-        true_types_df['pid'] = true_types_df.index
-        true_types_df = true_types_df.reset_index(drop=True)
+        try:
+            
+            true_types_df = pd.DataFrame([
+                {'pid': pid, 'true_type': ttype} 
+                for pid, ttype in true_types.items()
+            ])
+        except Exception as e:
+            print(f"[DEBUG] ERROR creating DataFrame: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'type_acc': np.nan,
+                'type_logloss': np.nan,
+                'type_brier': np.nan,
+                'type_macro_f1': np.nan,
+                'type_confusion': None
+            }
+    elif isinstance(true_types, list):
+        true_types_df = pd.DataFrame(true_types, columns=['pid', 'true_type'])
     elif isinstance(true_types, pd.Series):
         true_types_df = true_types.reset_index()
         true_types_df.columns = ['pid', 'true_type']
     else:
         # Assume it's already a DataFrame
-        true_types_df = true_types
-    
-    print(f"[DEBUG] prob_cols={prob_cols}")
-    print(f"[DEBUG] has trajectory_types={ 'trajectory_types' in ground_truth }")
+        true_types_df = true_types.copy()
     
     # Merge predictions with true labels
     merged = predicted_features[['pid'] + prob_cols].merge(
-        true_types[['pid', 'true_type']],
+        true_types_df[['pid', 'true_type']],
         on='pid',
         how='inner'
     )
-
-    print(f"[DEBUG] merged rows for classification={len(merged)}")
     
     if merged.empty:
         print(f"[WARNING] No matching PIDs between predictions and ground truth.")
@@ -356,7 +370,7 @@ def _compute_regression_metrics(
     - Intercept comparison (MSE, MAE, correlation)
     """
     metrics = {}
-    
+
     # 1. Compare full trajectories (if available)
     if dynamic_df is not None and predicted_trajectories is not None and not predicted_trajectories.empty:
         traj_metrics = _compare_full_trajectories(
@@ -367,6 +381,7 @@ def _compute_regression_metrics(
         metrics.update(traj_metrics)
     else:
         # No trajectory reconstruction available
+        print("[DEBUG] Skipping trajectory comparison")
         metrics.update({
             'trajectory_r_squared': np.nan,
             'trajectory_mse': np.nan,
@@ -379,6 +394,7 @@ def _compute_regression_metrics(
         slope_metrics = _compare_slopes(predicted_features, ground_truth)
         metrics.update(slope_metrics)
     else:
+        print("[DEBUG] No true_slopes in ground_truth, skipping")
         metrics.update({
             'slope_mse': np.nan,
             'slope_mae': np.nan,
@@ -392,6 +408,7 @@ def _compute_regression_metrics(
         intercept_metrics = _compare_intercepts(predicted_features, ground_truth)
         metrics.update(intercept_metrics)
     else:
+        print("[DEBUG] No true_intercepts in ground_truth, skipping")
         metrics.update({
             'intercept_mse': np.nan,
             'intercept_mae': np.nan,

@@ -22,7 +22,10 @@ def _window_worker(
 ):
     # Give each process its own PyTensor compiledir to prevent file lock contention
     base = os.environ.get("SLURM_TMPDIR", "/tmp")
-    os.environ["PYTENSOR_FLAGS"] = f"base_compiledir={base}/pytensor_{os.getpid()},floatX=float64"
+    pid = os.getpid()
+    compiledir = os.path.join(base, f"pytensor_{pid}")
+
+    os.environ["PYTENSOR_FLAGS"] = f"base_compiledir={compiledir},floatX=float64"
     # Also make BLAS single-threaded inside each worker to avoid oversubscription
     os.environ["OMP_NUM_THREADS"] = "1"
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")

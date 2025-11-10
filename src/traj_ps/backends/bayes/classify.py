@@ -87,4 +87,4 @@ def _posterior_feature_probs_from_samples(
     for s in range(S):
         flags = class_func(y_samples[s], time_grid, flat_thr, decline_thr, nonlinear_gap)
         for k in counts: counts[k] += int(flags[k])
-    return {f"traj_prob_{k}": counts[k]/S for k in counts}
+    return {f"trajtype_{k}_prob": counts[k]/S for k in counts}

@@ -19,7 +19,7 @@ def simulate_dynamic_static(n_pat=120, features=DEFAULT_FEATURES, seed=920):
                 if t >= T: break
                 out.append(t)
             return np.array(out) if out else np.array([rng.uniform(.1,T)])
-        t_e, t_h, t_s, t_m = pp(6), pp(5), pp(4), pp(3)
+        t_e, t_h, t_s, t_m = pp(2), pp(3), pp(4), pp(3)
 
         eg = np.clip(90 - 3.0*t_e + rng.normal(0,3,size=t_e.size), 5, 200)
         hb = np.clip(7.5 + 0.1*t_h + 0.2*np.sin(2*np.pi*t_h) + rng.normal(0,.3,size=t_h.size), 5, 14)
@@ -152,7 +152,8 @@ def _simulate_linear_decline(
     - treatment reduces the magnitude of decline (makes slope less negative)
     """
     feature_name = "eGFR"
-    
+    trajectory_types = {}
+
     # Store per-patient parameters
     for pid in static_df["pid"].unique():
         is_treated = static_df.loc[static_df["pid"] == pid, "treatment"].iloc[0]
@@ -171,6 +172,15 @@ def _simulate_linear_decline(
         
         ground_truth['true_intercepts'][pid] = baseline
         ground_truth['true_slopes'][pid] = slope
+
+        # Assign trajectory type based on slope characteristics
+        # Linear decline: consistent negative slope
+        if slope < -1.5:
+            trajectory_types[pid] = 'linear_decline'
+        elif slope < -0.5:
+            trajectory_types[pid] = 'linear_decline'  # Still declining but slower
+        else:
+            trajectory_types[pid] = 'prolonged_nonprogression'  # Minimal decline
         
         # Update dynamic_df with true trajectory
         mask = (dynamic_df["pid"] == pid) & (dynamic_df["feature_name"] == feature_name)
@@ -181,6 +191,8 @@ def _simulate_linear_decline(
         true_values = baseline + slope * times + noise
         
         dynamic_df.loc[mask, "value"] = true_values
+
+    ground_truth['trajectory_types'] = trajectory_types
     
     # Store feature-level parameters
     ground_truth['feature_params'][feature_name] = {
@@ -207,6 +219,7 @@ def _simulate_nonlinear(
     - Treatment affects both linear and quadratic terms
     """
     feature_name = "HbA1c"
+    trajectory_types = {}
     
     for pid in static_df["pid"].unique():
         is_treated = static_df.loc[static_df["pid"] == pid, "treatment"].iloc[0]
@@ -227,6 +240,9 @@ def _simulate_nonlinear(
         
         ground_truth['true_intercepts'][pid] = baseline
         ground_truth['true_slopes'][pid] = {'b1': b1, 'b2': b2}
+
+        # All patients have nonlinear trajectories in this scenario
+        trajectory_types[pid] = 'nonlinear'
         
         # Update dynamic_df
         mask = (dynamic_df["pid"] == pid) & (dynamic_df["feature_name"] == feature_name)
@@ -236,6 +252,8 @@ def _simulate_nonlinear(
         true_values = baseline + b1 * times + b2 * (times ** 2) + noise
         
         dynamic_df.loc[mask, "value"] = true_values
+
+    ground_truth['trajectory_types'] = trajectory_types  
     
     ground_truth['feature_params'][feature_name] = {
         'model': 'quadratic',
@@ -262,6 +280,7 @@ def _simulate_heterogeneous(
     - High baseline → smaller treatment benefit
     """
     feature_name = "eGFR"
+    trajectory_types = {}
     
     for pid in static_df["pid"].unique():
         is_treated = static_df.loc[static_df["pid"] == pid, "treatment"].iloc[0]
@@ -282,7 +301,20 @@ def _simulate_heterogeneous(
         
         ground_truth['true_intercepts'][pid] = baseline
         ground_truth['true_slopes'][pid] = slope
-        
+
+
+        # Mix of trajectory types based on final slope
+        if abs(slope) < 0.5:
+            trajectory_types[pid] = 'prolonged_nonprogression'
+        elif abs(slope) < 1.5:
+            trajectory_types[pid] = 'linear_decline'
+        else:
+            # Assign some as nonlinear for heterogeneity
+            if np.random.random() < 0.3:
+                trajectory_types[pid] = 'nonlinear'
+            else:
+                trajectory_types[pid] = 'linear_decline'
+
         # Update dynamic_df
         mask = (dynamic_df["pid"] == pid) & (dynamic_df["feature_name"] == feature_name)
         times = dynamic_df.loc[mask, "time"].values
@@ -291,6 +323,8 @@ def _simulate_heterogeneous(
         true_values = baseline + slope * times + noise
         
         dynamic_df.loc[mask, "value"] = true_values
+    
+    ground_truth['trajectory_types'] = trajectory_types
     
     ground_truth['feature_params'][feature_name] = {
         'model': 'heterogeneous_linear',

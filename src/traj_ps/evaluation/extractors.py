@@ -8,6 +8,7 @@ from sklearn.linear_model import TheilSenRegressor, HuberRegressor
 from traj_ps.backends.gam.model import GAMTrajPS, GAMConfig
 from traj_ps.backends.bayes.model import BayesianTrajPS, BayesConfig
 from traj_ps.backends.gam.features import extract_gam_trajectories
+from ..config import DiseaseConfig
 
 def _subset_by_lookback(g: pd.DataFrame, time_col: str, lookback_window: Optional[float]) -> pd.DataFrame:
     if lookback_window is None or not np.isfinite(lookback_window):
@@ -276,6 +277,7 @@ def extract_features_bayes(
     dynamic_df: pd.DataFrame,
     feature: str = "eGFR",
     cfg: Optional[BayesConfig] = None,
+    disease_cfg: Optional[DiseaseConfig] = None,
     lookback_window: Optional[float] = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
@@ -289,23 +291,22 @@ def extract_features_bayes(
     cfg = cfg or BayesConfig()
     
     # Prepare data
-    lab_long = dynamic_df[dynamic_df["feature_name"] == feature][["pid", "time", "value"]].rename(
+    primary_feature = disease_cfg.primary_feature.name
+    lab_long = dynamic_df[dynamic_df["feature_name"] == primary_feature][["pid", "time", "value"]].rename(
         columns={
             "pid": cfg.pids,
             "time": cfg.time_col,
             "value": cfg.values
         }
     ).copy()
-
-    print(cfg.sampler)
     
     # Call pipeline WITH the sampler config
     prob_feats = compute_time_varying_trajectory_covariates_parallel(
         lab_df=lab_long,
         window_years=cfg.window_years,
-        flat_thr=cfg.flat_thr,
-        decline_thr=cfg.decline_thr,
-        nonlinear_gap=cfg.nonlinear_gap,
+        flat_thr=disease_cfg.primary_feature.flat_threshold,
+        decline_thr=disease_cfg.primary_feature.decline_threshold,
+        nonlinear_gap=disease_cfg.primary_feature.nonlinear_gap,
         df_basis=cfg.df_basis,
         n_samples=cfg.n_samples,
         tune=cfg.tune,
