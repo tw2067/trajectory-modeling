@@ -1,9 +1,10 @@
 from __future__ import annotations
 import pandas as pd
 from dataclasses import dataclass
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, Literal, Callable
 from lifelines import CoxTimeVaryingFitter
 from .pipeline import compute_time_varying_trajectory_covariates_parallel
+from .classify import flags_from_traj
 
 
 @dataclass
@@ -29,6 +30,9 @@ class BayesConfig:
     progressbar: bool = False
     available_gpus: list[int] | None = None
     target_accept: Optional[float] = 0.95
+    traj_types: tuple[str, ...] = ('prolonged_nonprogression', 'linear_decline', 'nonlinear')
+    class_func: Callable = flags_from_traj
+    label_map: Optional[Dict[str, str]] = None
 
 class BayesianTrajPS:
     name = "bayes"
@@ -76,7 +80,7 @@ class BayesianTrajPS:
             df_basis=self.cfg.df_basis,
             n_samples=self.cfg.n_samples,
             tune=self.cfg.tune,
-            n_jobs=-1,
+            n_jobs=self.cfg.n_jobs,
             min_points_per_window=self.cfg.min_points_per_window,
             grid_freq=self.cfg.grid_freq,
             pids=self.cfg.pids,
@@ -87,6 +91,9 @@ class BayesianTrajPS:
             cores=self.cfg.cores,
             target_accept=self.cfg.target_accept,
             progressbar=self.cfg.progressbar,
+            traj_types=self.cfg.traj_types,
+            class_func=self.cfg.class_func,
+            label_map=self.cfg.label_map,
         )
 
     def ps(self, counting_process_df: pd.DataFrame) -> pd.DataFrame:

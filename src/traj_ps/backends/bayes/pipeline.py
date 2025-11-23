@@ -11,6 +11,7 @@ def _window_worker(
     df_basis=5, n_samples=1000, tune=1000, min_points=5, grid_freq=12,
     class_func=flags_from_traj, values='lab_value', time_col='time',
     traj_types=('prolonged_nonprogression','linear_decline','nonlinear'),
+    label_map=None,
     *,
     sampler: str = 'pymc',
     chains: int = 4,
@@ -39,7 +40,7 @@ def _window_worker(
         chain_method=chain_method
     )
     return _posterior_feature_probs_from_samples(
-        ys, tg, flat_thr, decline_thr, nonlinear_gap, class_func, traj_types
+        ys, tg, flat_thr, decline_thr, nonlinear_gap, class_func, traj_types, label_map=label_map
     )
 
 
@@ -67,6 +68,7 @@ def compute_time_varying_trajectory_covariates_parallel(
     n_jobs: int = -1, min_points_per_window: int = 5, grid_freq: int = 12,
     class_func=flags_from_traj, pids='patient_id', values='lab_value',
     time_col='time', traj_types=('prolonged_nonprogression','linear_decline','nonlinear'),
+    label_map=None,
     verbose: int = 0,
     *,
     sampler: str = 'pymc',
@@ -82,6 +84,14 @@ def compute_time_varying_trajectory_covariates_parallel(
     posterior probabilities for each trajectory type. Returns a long DF:
       [pids, time_col, traj_prob_* ...]
     """
+
+    if label_map is None:
+        label_map = {
+            'nonprogression': 'prolonged_nonprogression',
+            'linear': 'linear_decline',
+            'nonlinear': 'nonlinear'
+        }
+
     windows = []
     for pid, g in lab_df.groupby(pids):
         times = np.asarray(sorted(g[time_col].unique()))
@@ -106,7 +116,7 @@ def compute_time_varying_trajectory_covariates_parallel(
             delayed(_window_worker_gpu_pinned)(
                 win_df, gpu_id,
                 flat_thr, decline_thr, nonlinear_gap, df_basis, n_samples, tune,
-                min_points_per_window, grid_freq, class_func, values, time_col, traj_types,
+                min_points_per_window, grid_freq, class_func, values, time_col, traj_types, label_map=label_map,
                 sampler=sampler, chains=chains, cores=cores, progressbar=progressbar, chain_method=chain_method,
                 target_accept=target_accept
             )
@@ -119,7 +129,7 @@ def compute_time_varying_trajectory_covariates_parallel(
         results = Parallel(n_jobs=nj_eff, backend="loky", verbose=verbose)(
             delayed(_window_worker)(
                 win_df, flat_thr, decline_thr, nonlinear_gap, df_basis, n_samples, tune,
-                min_points_per_window, grid_freq, class_func, values, time_col, traj_types,
+                min_points_per_window, grid_freq, class_func, values, time_col, traj_types, label_map=label_map,
                 sampler=sampler, chains=chains, cores=cores, progressbar=progressbar, chain_method=chain_method,
                 target_accept=target_accept
             )
