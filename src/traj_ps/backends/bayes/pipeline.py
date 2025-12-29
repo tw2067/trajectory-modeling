@@ -78,6 +78,7 @@ def compute_time_varying_trajectory_covariates_parallel(
     chain_method: str = "vectorized", 
     target_accept: float = 0.95,
     available_gpus: list[int]|None = None,
+    windowing_col: str|None = None  # allows windows in different granullarity than the measuring frequency
 ) -> pd.DataFrame:
     """
     For each (pid, anchor time), use the previous window_years to compute
@@ -94,9 +95,13 @@ def compute_time_varying_trajectory_covariates_parallel(
 
     windows = []
     for pid, g in lab_df.groupby(pids):
-        times = np.asarray(sorted(g[time_col].unique()))
+    
+        if windowing_col is None:
+            windowing_col = time_col
+        times = np.asarray(sorted(g[windowing_col].unique()))
+
         for t in times:
-            win = g[(g[time_col] >= t - window_years) & (g[time_col] <= t)]
+            win = g[(g[windowing_col] >= t - window_years) & (g[windowing_col] <= t)]
             if len(win) >= min_points_per_window:
                 windows.append((pid, t, win[[pids, time_col, values]].copy()))
 
@@ -138,7 +143,7 @@ def compute_time_varying_trajectory_covariates_parallel(
 
     rows = []
     for (pid, t, _), probs in zip(windows, results):
-        rec = {pids: pid, time_col: t}
+        rec = {pids: pid, windowing_col: t}
         rec.update(probs)
         rows.append(rec)
     return pd.DataFrame(rows)

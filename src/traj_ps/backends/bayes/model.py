@@ -21,6 +21,7 @@ class BayesConfig:
     pids: str = "patient_id"
     values: str = "lab_value"
     time_col: str = "time"
+    windowing_col: str = "time"
     use_gpu: bool = True
     sampler: Literal["pymc", "numpyro", "nutpie"] = "pymc"
     chains: int = 4
@@ -94,6 +95,7 @@ class BayesianTrajPS:
             traj_types=self.cfg.traj_types,
             class_func=self.cfg.class_func,
             label_map=self.cfg.label_map,
+            windowing_col=self.cfg.windowing_col
         )
 
     def ps(self, counting_process_df: pd.DataFrame) -> pd.DataFrame:
