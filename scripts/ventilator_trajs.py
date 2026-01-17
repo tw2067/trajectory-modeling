@@ -16,7 +16,7 @@ Trajectory interpretation:
 import numpy as np
 import pandas as pd
 from traj_ps.backends.bayes import BayesianTrajPS, BayesConfig
-from traj_ps.backends.bayes.classify import pos_flags_from_traj, flags_from_traj
+from traj_ps.backends.bayes.classify import pos_flags_from_traj
 import importlib
 import sys
 import gc
@@ -141,8 +141,8 @@ def process_pf_trajectories():
         'pf_ratio'
     ]].rename(columns={'pf_ratio': 'lab_value'})
     
-    # P/F ratio DECREASES = worsening (like platelets)
-    # Use flags_from_traj with negative thresholds
+    # P/F ratio INCREASES = improvement (better oxygenation)
+    # Use pos_flags_from_traj with positive thresholds
     pf_config = BayesConfig(
         window_years=3.0,           # 3 days lookback
         df_basis=5,
@@ -150,8 +150,8 @@ def process_pf_trajectories():
         tune=300,
         min_points_per_window=4,
         grid_freq=2,
-        flat_thr=-10.0,             # Stable: >-10 points/day (near zero or small negative)
-        decline_thr=-30.0,          # Gradual decline: <-30 points/day (more negative = worse)
+        flat_thr=10.0,              # Stable: ±10 points/day (near zero or small change)
+        decline_thr=30.0,           # Gradual improvement: >30 points/day (positive slope)
         nonlinear_gap=20.0,
         pids='hadm_id',
         values='lab_value',
@@ -162,9 +162,9 @@ def process_pf_trajectories():
         target_accept=0.99,
         chains=4,
         n_jobs=-1,
-        class_func=flags_from_traj,
-        traj_types=('prolonged_nonprogression', 'linear_decline', 'nonlinear'),
-        label_map={'nonprogression': 'prolonged_nonprogression', 'linear': 'linear_decline', 'nonlinear': 'nonlinear'}
+        class_func=pos_flags_from_traj,
+        traj_types=('prolonged_nonprogression', 'linear_increase', 'nonlinear'),
+        label_map={'nonprogression': 'prolonged_nonprogression', 'linear': 'linear_increase', 'nonlinear': 'nonlinear'}
     )
     
     # PRE-COMPILE PyTensor functions
@@ -202,26 +202,26 @@ def process_pf_trajectories():
     # Rename columns
     column_map = {
         'trajtype_prolonged_nonprogression_prob': 'prob_stable',
-        'trajtype_linear_decline_prob': 'prob_gradual_increase',
-        'trajtype_nonlinear_prob': 'prob_rapid_increase'
+        'trajtype_linear_increase_prob': 'prob_gradual_improvement',
+        'trajtype_nonlinear_prob': 'prob_rapid_improvement'
     }
     
     trajectory_probs = trajectory_probs.rename(columns=column_map)
     
     # Merge with original data
     pf_with_probs = pf_ts_clean.merge(
-        trajectory_probs[['hadm_id', 'time_day', 'prob_stable', 'prob_gradual_increase', 'prob_rapid_increase']],
+        trajectory_probs[['hadm_id', 'time_day', 'prob_stable', 'prob_gradual_improvement', 'prob_rapid_improvement']],
         on=['hadm_id', 'time_day'],
         how='right'
     ).sort_values(by='time_days').drop_duplicates(subset=['hadm_id', 'time_day'], keep='last')
-    
+
     # Dominant trajectory per time window
     pf_with_probs['dominant_traj'] = pf_with_probs[
-        ['prob_stable', 'prob_gradual_increase', 'prob_rapid_increase']
+        ['prob_stable', 'prob_gradual_improvement', 'prob_rapid_improvement']
     ].idxmax(axis=1).str.replace('prob_', '')
-    
+
     print(f"\n   Trajectory Distribution:")
-    for traj in ['stable', 'gradual_increase', 'rapid_increase']:
+    for traj in ['stable', 'gradual_improvement', 'rapid_improvement']:
         subset = pf_with_probs[pf_with_probs['dominant_traj'] == traj]
         if len(subset) > 0:
             print(f"     {traj.replace('_', ' ').title():20s}: {len(subset):5,} ({100*len(subset)/len(pf_with_probs):5.1f}%)")
@@ -232,7 +232,7 @@ def process_pf_trajectories():
     pf_output = pf_with_probs[[
         'hadm_id', 'time_days', 'time_day',
         'pf_ratio', 'baseline_pf_ratio',
-        'prob_stable', 'prob_gradual_increase', 'prob_rapid_increase'
+        'prob_stable', 'prob_gradual_improvement', 'prob_rapid_improvement'
     ]]
     pf_output.to_csv('/home/gaga/tamarw1/trajectory-modeling/results/mimic/ventilator/pf_trajectory_probs_bayes.csv', index=False)
     print(f"\n✓ Saved: results/mimic/ventilator/pf_trajectory_probs_bayes.csv")

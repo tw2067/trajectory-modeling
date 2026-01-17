@@ -177,6 +177,92 @@ def impute_features(df, hadm_col='hadm_id', traj_cols=None, vital_cols=None, lab
     return df
 
 
+def biomarker_summary_stats(ts_df, value_col, lookback_days):
+    """
+    Generate summary statistics for biomarker time series over a lookback window.
+    
+    Works with both MIMIC (hadm_id) and HiRiD (patientid) datasets.
+    
+    Parameters
+    ----------
+    ts_df : pd.DataFrame
+        Time series data with columns: [hadm_id or patientid, time_day, time_days, value_col]
+    value_col : str
+        Name of the biomarker column
+    lookback_days : int
+        Number of days to look back for aggregation
+        
+    Returns
+    -------
+    pd.DataFrame
+        Summary statistics per patient/admission and timepoint with columns:
+        - {id_col}: patient/admission ID
+        - time_day: integer day
+        - {value_col}_mean_{lookback_days}d
+        - {value_col}_max_{lookback_days}d
+        - {value_col}_min_{lookback_days}d
+        - {value_col}_change_{lookback_days}d
+        - {value_col}_linear_trend_{lookback_days}d
+        - {value_col}_std_{lookback_days}d
+    """
+    # Detect patient ID column
+    id_col = 'hadm_id' if 'hadm_id' in ts_df.columns else 'patientid'
+    
+    summary_df_list = []
+    for group, group_df in ts_df.groupby(id_col):
+        group_df = group_df.sort_values('time_days')
+        summary_list = []
+        for current_time in group_df['time_day'].unique():
+            window_start = current_time - lookback_days
+            window_data = group_df[
+                group_df['time_day'].between(window_start, current_time, inclusive='both')
+            ]
+            if len(window_data) > 0:
+                value_mean = window_data[value_col].mean()
+                value_max = window_data[value_col].max()
+                value_min = window_data[value_col].min()
+                value_change = window_data[value_col].iloc[-1] - window_data[value_col].iloc[0]
+                value_std = window_data[value_col].std()
+                
+                # Compute linear trend robustly
+                try:
+                    if len(window_data) >= 2 and value_std > 0:
+                        # Use polyfit with error handling
+                        value_linear_trend = np.polyfit(window_data['time_days'], window_data[value_col], 1)[0]
+                    else:
+                        value_linear_trend = np.nan
+                except (np.linalg.LinAlgError, ValueError):
+                    # If polyfit fails, use simple slope calculation
+                    try:
+                        x = window_data['time_days'].values
+                        y = window_data[value_col].values
+                        if len(x) >= 2 and len(np.unique(x)) >= 2:
+                            value_linear_trend = (y[-1] - y[0]) / (x[-1] - x[0]) if x[-1] != x[0] else np.nan
+                        else:
+                            value_linear_trend = np.nan
+                    except:
+                        value_linear_trend = np.nan
+            else:
+                value_mean = np.nan
+                value_max = np.nan
+                value_min = np.nan
+                value_change = np.nan
+                value_linear_trend = np.nan
+                value_std = np.nan
+            summary_list.append({
+                id_col: group,
+                'time_day': current_time,
+                f'{value_col}_mean_{lookback_days}d': value_mean,
+                f'{value_col}_max_{lookback_days}d': value_max,
+                f'{value_col}_min_{lookback_days}d': value_min,
+                f'{value_col}_change_{lookback_days}d': value_change,
+                f'{value_col}_linear_trend_{lookback_days}d': value_linear_trend,
+                f'{value_col}_std_{lookback_days}d': value_std
+            })
+        summary_df_list.append(pd.DataFrame(summary_list))
+    return pd.concat(summary_df_list, ignore_index=True)
+
+
 # ============================================================================
 # OUTCOME DEFINITION
 # ============================================================================
@@ -314,7 +400,8 @@ def add_pairwise_brackets(ax, data, pairs_to_compare, y_max):
                    ha='center', va='bottom', fontsize=12, fontweight='bold')
 
 
-def plot_boxplots_with_stats(comparison_results, outcome_df, target_col, pairs_to_compare, n_folds_total):
+def plot_boxplots_with_stats(comparison_results, outcome_df, target_col, pairs_to_compare, n_folds_total,
+                             roc_ylim=[0, 1.05], ap_ylim=[0, 1.05]):
     """
     Plot boxplots with statistical significance markers.
     
@@ -353,13 +440,13 @@ def plot_boxplots_with_stats(comparison_results, outcome_df, target_col, pairs_t
                        capprops=dict(linewidth=1.5))
     
     ax1.set_xticklabels(feature_names, rotation=45, ha='right')
-    ax1.set_ylabel('ROC-AUC', fontsize=12)
-    ax1.set_title(f'ROC-AUC Distribution Across Feature Sets (n={n_folds_total} folds)', fontsize=14, fontweight='bold')
+    ax1.set_ylabel('AUROC', fontsize=12)
+    ax1.set_title(f'AUROC Distribution Across Feature Sets (n={n_folds_total} folds)', fontsize=14, fontweight='bold')
     ax1.axhline(y=0.5, color='gray', linestyle='--', linewidth=1, label='Random', alpha=0.7)
     
     y_max_roc = max([max(d) for d in roc_data])
     add_pairwise_brackets(ax1, roc_data, pairs_to_compare, y_max_roc)
-    ax1.set_ylim([0.4, 1.05])
+    ax1.set_ylim(roc_ylim)
     ax1.legend()
     ax1.grid(axis='y', alpha=0.3)
     
@@ -373,14 +460,14 @@ def plot_boxplots_with_stats(comparison_results, outcome_df, target_col, pairs_t
                        capprops=dict(linewidth=1.5))
     
     ax2.set_xticklabels(feature_names, rotation=45, ha='right')
-    ax2.set_ylabel('Average Precision', fontsize=12)
-    ax2.set_title(f'Average Precision Distribution Across Feature Sets (n={n_folds_total} folds)', fontsize=14, fontweight='bold')
+    ax2.set_ylabel('AUPR', fontsize=12)
+    ax2.set_title(f'AUPR Distribution Across Feature Sets (n={n_folds_total} folds)', fontsize=14, fontweight='bold')
     baseline = outcome_df[target_col].mean()
     ax2.axhline(y=baseline, color='gray', linestyle='--', linewidth=1, label=f'Baseline ({baseline:.3f})', alpha=0.7)
     
     y_max_ap = max([max(d) for d in ap_data])
     add_pairwise_brackets(ax2, ap_data, pairs_to_compare, y_max_ap)
-    ax2.set_ylim([0.1, max(0.9, y_max_ap + 0.1)])
+    ax2.set_ylim(ap_ylim)
     ax2.legend()
     ax2.grid(axis='y', alpha=0.3)
     
@@ -406,7 +493,7 @@ def print_statistical_comparisons(comparison_results, pairs_to_compare):
     print("\n" + "="*80)
     print("PAIRWISE STATISTICAL COMPARISONS (Wilcoxon Signed-Rank Test)")
     print("="*80)
-    print(f"{'Comparison':<60} {'ROC-AUC p':<12} {'Sig':<5} {'AP p':<12} {'Sig':<5}")
+    print(f"{'Comparison':<60} {'AUROC p':<12} {'Sig':<5} {'AUPR p':<12} {'Sig':<5}")
     print("-"*80)
     
     for i, j in pairs_to_compare:
@@ -475,7 +562,7 @@ def plot_roc_pr_curves(comparison_results, outcome_df, target_col, color_scheme=
         std_auc = np.std(metrics['roc_auc'])
         
         ax1.plot(mean_fpr, mean_tpr, color=color, 
-                 label=f'{feature_set_name} (AUC = {mean_auc:.3f} ± {std_auc:.3f})',
+                 label=f'{feature_set_name} (AUROC = {mean_auc:.3f} ± {std_auc:.3f})',
                  linewidth=2.5)
         ax1.fill_between(mean_fpr, mean_tpr - std_tpr, mean_tpr + std_tpr, 
                           color=color, alpha=0.2)
@@ -506,7 +593,7 @@ def plot_roc_pr_curves(comparison_results, outcome_df, target_col, color_scheme=
         std_ap = np.std(metrics['avg_precision'])
         
         ax2.plot(mean_recall, mean_precision, color=color,
-                 label=f'{feature_set_name} (AP = {mean_ap:.3f} ± {std_ap:.3f})',
+                 label=f'{feature_set_name} (AUPR = {mean_ap:.3f} ± {std_ap:.3f})',
                  linewidth=2.5)
         ax2.fill_between(mean_recall, mean_precision - std_precision, mean_precision + std_precision,
                           color=color, alpha=0.2)
@@ -591,6 +678,7 @@ def train_repeated_cv(prediction_df, feature_cols, target_col, group_col, n_repe
             )
 
             model.fit(X_train, y_train)
+            
             y_proba = model.predict_proba(X_test)[:, 1]
             
             if y_test.sum() > 0:
