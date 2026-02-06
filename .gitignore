@@ -7,3 +7,5 @@ __pycache__/
 /code/
 logs/
 *.pt
+*.csv
+/src/traj_ps/

@@ -24,8 +24,8 @@ import pandas as pd
 code_dir = Path(__file__).parent.parent / 'code'
 sys.path.insert(0, str(code_dir))
 
-from traj_ps.backends.bayes import BayesianTrajPS, BayesConfig
-from traj_ps.backends.bayes.classify import flags_from_traj, pos_flags_from_traj
+from traj_features.backends.bayes import BayesianTrajPS, BayesConfig
+from traj_features.backends.bayes.classify import flags_from_traj, pos_flags_from_traj
 
 
 # Use job-specific compile directory to avoid lock contention
@@ -121,20 +121,20 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
     lactate_cfg = BayesConfig(
         window_years=window,
         df_basis=5,
-        n_samples=200,
+        n_samples=300,
         tune=300,
         min_points_per_window=4,
-        grid_freq=2,
-        flat_thr=0.1,
-        decline_thr=0.3,
-        nonlinear_gap=0.5,
+        grid_freq=3,
+        flat_thr=0.15,
+        decline_thr=0.5,
+        nonlinear_gap=0.6,
         pids='patientid',
         values='lab_value',
         time_col='time_days',
         windowing_col='time_day',
         use_gpu=False,
         sampler=sampler,
-        target_accept=0.99,
+        target_accept=0.995,
         chains=4,
         n_jobs=-1,
         class_func=pos_flags_from_traj,
@@ -145,20 +145,20 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
     wbc_cfg = BayesConfig(
         window_years=window,
         df_basis=5,
-        n_samples=200,
+        n_samples=300,
         tune=300,
         min_points_per_window=4,
-        grid_freq=2,
+        grid_freq=3,
         flat_thr=1.0,
-        decline_thr=3.0,
-        nonlinear_gap=2.0,
+        decline_thr=2.0,
+        nonlinear_gap=3.0,
         pids='patientid',
         values='lab_value',
         time_col='time_days',
         windowing_col='time_day',
         use_gpu=False,
         sampler=sampler,
-        target_accept=0.99,
+        target_accept=0.995,
         chains=4,
         n_jobs=-1,
         class_func=pos_flags_from_traj,
@@ -169,10 +169,10 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
     platelet_cfg = BayesConfig(
         window_years=window,
         df_basis=5,
-        n_samples=200,
+        n_samples=300,
         tune=300,
         min_points_per_window=4,
-        grid_freq=2,
+        grid_freq=3,
         flat_thr=-20.0,
         decline_thr=-50.0,
         nonlinear_gap=30.0,
@@ -182,7 +182,7 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
         windowing_col='time_day',
         use_gpu=False,
         sampler=sampler,
-        target_accept=0.99,
+        target_accept=0.995,
         chains=4,
         n_jobs=-1,
         class_func=flags_from_traj,

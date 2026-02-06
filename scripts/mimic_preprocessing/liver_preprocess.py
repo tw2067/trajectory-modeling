@@ -17,15 +17,20 @@ Usage:
 """
 
 import os
-import sys
 import pandas as pd
 import numpy as np
 from pathlib import Path
 
-sys.path.insert(0, os.path.abspath("scripts/notebooks"))
-from notebook_utils import aggregate_vitals_labs, drop_high_missing_columns
-
-from common import MIMICPaths, connect_db, load_metadata, fetch_labevents_timeseries, fetch_vitals_labs, ensure_time_day
+from common import (
+    MIMICPaths,
+    connect_db,
+    load_metadata,
+    fetch_labevents_timeseries,
+    fetch_vitals_labs,
+    ensure_time_day,
+    aggregate_vitals_labs,
+    drop_high_missing_columns,
+)
 
 OUTPUT_DIR = Path("results/mimic/liver")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

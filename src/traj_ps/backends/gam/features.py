@@ -264,6 +264,7 @@ def _process_one_patient(
 
 def _fit_patient_gam(
     patient_df: pd.DataFrame,
+    feature: str = "eGFR",
     n_splines: int = 10,
     lam: float = 0.6,
 ) -> Tuple[pd.DataFrame, dict]:
@@ -337,8 +338,8 @@ def _fit_patient_gam(
 
     feats = {
         "pid": pid,
-        "eGFR_slope": float(slope),
-        "eGFR_intercept": float(intercept),
+        f"{feature}_slope": float(slope),
+        f"{feature}_intercept": float(intercept),
     }
     return traj, feats
 
@@ -402,6 +403,183 @@ def compute_gam_beta_covariates_adaptive_parallel(
     return cov_df
 
 
+def extract_gam_trajectory_features(
+    dynamic_df: pd.DataFrame,
+    feature: str = "eGFR",
+    window_size: float = 1.0,
+    min_obs: int = 3,
+    n_splines: int = 10,
+    lam: float = 0.6,
+    **kwargs
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Extract per-window GAM trajectory features.
+    
+    NEW FUNCTION for window-based trajectory extraction (used by validation).
+    This is separate from extract_gam_trajectories which does global fitting.
+    
+    For each patient:
+    1. Divide time series into windows
+    2. Fit GAM with spline on time within each window
+    3. Extract slope (derivative at window midpoint)
+    4. Extract intercept (value at window start)
+    5. Aggregate to patient-level features
+    
+    Parameters
+    ----------
+    dynamic_df : pd.DataFrame
+        Columns: pid, time, feature_name, value
+    feature : str
+        Primary feature to model
+    window_size : float
+        Window size in years (default: 1.0)
+    min_obs : int
+        Minimum observations per window (default: 3)
+    n_splines : int
+        Number of spline basis functions (default: 10)
+    lam : float
+        Smoothing parameter (default: 0.6)
+    
+    Returns
+    -------
+    features_df : pd.DataFrame
+        Columns: pid, {feature}_slope, {feature}_intercept
+    trajectories_df : pd.DataFrame
+        Columns: pid, time, predicted_value
+    """
+    print(f"[GAM-Window] Extracting windowed trajectory features for {feature}")
+    print(f"[GAM-Window] Window size: {window_size} years, min_obs: {min_obs}")
+    
+    # Filter to primary feature
+    feat_df = dynamic_df[dynamic_df['feature_name'] == feature].copy()
+    
+    if feat_df.empty:
+        print(f"[WARNING] No data for feature {feature}")
+        return pd.DataFrame(columns=['pid', f'{feature}_slope', f'{feature}_intercept']), \
+               pd.DataFrame(columns=['pid', 'time', 'predicted_value'])
+    
+    # Determine overall time range
+    t_min = feat_df['time'].min()
+    t_max = feat_df['time'].max()
+    
+    # Create windows
+    n_windows = int(np.ceil((t_max - t_min) / window_size))
+    if n_windows == 0:
+        n_windows = 1
+    windows = [(t_min + i * window_size, t_min + (i + 1) * window_size) 
+               for i in range(n_windows)]
+    
+    print(f"[GAM-Window] Time range: [{t_min:.2f}, {t_max:.2f}], n_windows: {n_windows}")
+    
+    features_list = []
+    trajectories_list = []
+    
+    for pid in feat_df['pid'].unique():
+        pid_data = feat_df[feat_df['pid'] == pid].sort_values('time')
+        
+        window_slopes = []
+        window_intercepts = []
+        
+        for win_start, win_end in windows:
+            # Get observations in this window
+            win_mask = (pid_data['time'] >= win_start) & (pid_data['time'] < win_end)
+            win_data = pid_data[win_mask]
+            
+            if len(win_data) < min_obs:
+                continue
+            
+            times = win_data['time'].values
+            values = win_data['value'].values
+            
+            # Try GAM fitting
+            try:
+                # Use cubic spline with specified parameters
+                actual_n_splines = min(n_splines, len(times) - 2)  # Can't exceed data points
+                if actual_n_splines < 2:
+                    # Too few points, use linear fallback
+                    raise ValueError("Too few points for GAM")
+                
+                gam = LinearGAM(s(0, n_splines=actual_n_splines, spline_order=3))
+                gam.lam = lam
+                gam.fit(times.reshape(-1, 1), values)
+                
+                # Extract slope at window midpoint (numerical derivative)
+                win_mid = (win_start + win_end) / 2
+                dt = 0.01 * (win_end - win_start)  # 1% of window width
+                
+                y_plus = gam.predict([[win_mid + dt]])[0]
+                y_minus = gam.predict([[win_mid - dt]])[0]
+                slope = (y_plus - y_minus) / (2 * dt)
+                
+                # Intercept: value at window start
+                intercept = gam.predict([[win_start]])[0]
+                
+                window_slopes.append(slope)
+                window_intercepts.append(intercept)
+                
+                # Generate predictions for reconstruction
+                pred_times = np.linspace(win_start, win_end, 20)
+                pred_values = gam.predict(pred_times.reshape(-1, 1))
+                
+                for t, v in zip(pred_times, pred_values):
+                    trajectories_list.append({
+                        'pid': pid,
+                        'time': t,
+                        'predicted_value': v
+                    })
+                
+            except Exception as gam_error:
+                # GAM failed, fall back to linear regression
+                try:
+                    from sklearn.linear_model import LinearRegression
+                    lr = LinearRegression()
+                    lr.fit(times.reshape(-1, 1), values)
+                    
+                    slope = lr.coef_[0]
+                    intercept = lr.predict([[win_start]])[0]
+                    
+                    window_slopes.append(slope)
+                    window_intercepts.append(intercept)
+                    
+                    # Generate predictions
+                    pred_times = np.linspace(win_start, win_end, 20)
+                    pred_values = lr.predict(pred_times.reshape(-1, 1))
+                    
+                    for t, v in zip(pred_times, pred_values):
+                        trajectories_list.append({
+                            'pid': pid,
+                            'time': t,
+                            'predicted_value': v
+                        })
+                        
+                except Exception as lr_error:
+                    print(f"[ERROR] Both GAM and linear failed for pid={pid}, "
+                          f"window=[{win_start:.2f}, {win_end:.2f}]: GAM={gam_error}, LR={lr_error}")
+                    continue
+        
+        # Aggregate: mean slope across windows, first window's intercept as baseline
+        if window_slopes:
+            mean_slope = np.mean(window_slopes)
+            baseline = window_intercepts[0] if window_intercepts else pid_data['value'].iloc[0]
+            
+            features_list.append({
+                'pid': pid,
+                f'{feature}_slope': mean_slope,
+                f'{feature}_intercept': baseline,
+                'n_windows': len(window_slopes)
+            })
+    
+    features_df = pd.DataFrame(features_list)
+    trajectories_df = pd.DataFrame(trajectories_list)
+    
+    print(f"[GAM-Window] Extracted {len(features_df)} patient features")
+    if not features_df.empty:
+        print(f"[GAM-Window] Mean slope: {features_df[f'{feature}_slope'].mean():.4f} ± "
+              f"{features_df[f'{feature}_slope'].std():.4f}")
+    
+    return features_df, trajectories_df
+
+
 def extract_gam_trajectories(
     dynamic_df: pd.DataFrame,
     feature: str = "eGFR",
@@ -419,13 +597,13 @@ def extract_gam_trajectories(
     groups = [g for _, g in df.groupby("pid")]
 
     results = Parallel(n_jobs=n_jobs, prefer="threads")(
-        delayed(_fit_patient_gam)(g, n_splines=n_splines, lam=lam)
+        delayed(_fit_patient_gam)(g, feature=feature, n_splines=n_splines, lam=lam)
         for g in groups
         if len(g) >= min_points
     )
 
     if not results:
-        return pd.DataFrame(columns=["pid", "eGFR_slope", "eGFR_intercept"]), pd.DataFrame(columns=["pid", "time", "predicted_value"])
+        return pd.DataFrame(columns=["pid", f"{feature}_slope", f"{feature}_intercept"]), pd.DataFrame(columns=["pid", "time", "predicted_value"])
 
     traj_list, feat_list = zip(*results)
     trajectories = pd.concat(traj_list, ignore_index=True)
