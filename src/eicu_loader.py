@@ -88,6 +88,17 @@ class EICULoader:
         ORDER BY p.patientunitstayid
         """
         return self.conn.execute(query).fetchdf()
+
+    def load_general_cohort(self,
+                            age_min: int = 18,
+                            age_max: int = 90,
+                            min_los_hours: float = 48) -> pd.DataFrame:
+        """
+        Load a general ICU cohort: adult patients aged 18-90 with ≥2 day LOS.
+
+        Returns the same schema as load_aki_cohort().
+        """
+        return self.load_aki_cohort(age_min=age_min, age_max=age_max, min_los_hours=min_los_hours)
     
     def load_liver_cohort(self,
                          age_min: int = 18,
@@ -321,7 +332,8 @@ class EICULoader:
     
     def load_medications(self,
                         drug_names: List[str],
-                        patient_unit_stay_ids: List[int]) -> pd.DataFrame:
+                        patient_unit_stay_ids: List[int],
+                        match_mode: str = "exact") -> pd.DataFrame:
         """
         Load medication infusions (vasopressors, diuretics, etc.).
         
@@ -332,9 +344,19 @@ class EICULoader:
         Returns:
             DataFrame with columns: patientunitstayid, med_time_hours, drugname, infusionrate
         """
-        drug_names_str = "', '".join(drug_names)
+        if not drug_names or not patient_unit_stay_ids:
+            return pd.DataFrame(columns=["patientunitstayid", "med_time_hours", "drugname", "infusionrate"])
+
+        drug_names_lower = [name.lower() for name in drug_names]
+        drug_names_str = "', '".join(drug_names_lower)
         stay_ids_str = ",".join(map(str, patient_unit_stay_ids))
         
+        if match_mode == "contains":
+            like_clauses = " OR ".join([f"LOWER(i.drugname) LIKE '%{name}%'" for name in drug_names_lower])
+            drug_filter = f"({like_clauses})"
+        else:
+            drug_filter = f"LOWER(i.drugname) IN ('{drug_names_str}')"
+
         query = f"""
         SELECT 
             i.patientunitstayid::INTEGER AS patientunitstayid,
@@ -344,7 +366,7 @@ class EICULoader:
         FROM infusionDrug i
         WHERE 
             i.patientunitstayid::INTEGER IN ({stay_ids_str})
-            AND LOWER(i.drugname) IN ('{drug_names_str}')
+            AND {drug_filter}
         ORDER BY i.patientunitstayid, i.infusionoffset
         """
         return self.conn.execute(query).fetchdf()
