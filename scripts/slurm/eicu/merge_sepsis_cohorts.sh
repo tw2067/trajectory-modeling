@@ -1,16 +1,16 @@
 #!/bin/bash
-# Merge all AKI trajectory sub-cohort files into a single dataset
+# Merge all eICU sepsis trajectory sub-cohort files into single datasets
 
-cd /home/gaga/tamarw1/trajectory-modeling
+cd /home/gaga/tamarw1/trajectory-modeling || exit 1
 
-echo "Merging AKI trajectory probability sub-cohorts..."
+echo "Merging eICU sepsis trajectory probability sub-cohorts..."
+
 echo ""
-
 python3 << 'EOF'
 import pandas as pd
 from pathlib import Path
 
-result_dir = Path("results/eicu/aki")
+result_dir = Path("results/eicu/sepsis")
 
 def merge_cohorts(pattern: str, output_name: str, id_col: str):
     cohort_files = sorted(result_dir.glob(pattern))
@@ -37,8 +37,10 @@ def merge_cohorts(pattern: str, output_name: str, id_col: str):
     print(f"  Total rows: {len(merged):,}")
     print(f"  Total patients: {merged[id_col].nunique():,}")
 
-merge_cohorts("aki_trajectory_probs_bayes_cohort*.csv", "aki_trajectory_probs_bayes.csv", "stay_id")
-merge_cohorts("aki_trajectory_probs_cohort*.csv", "aki_trajectory_probs.csv", "stay_id")
+merge_cohorts("lactate_trajectory_probs_bayes_cohort*.csv", "lactate_trajectory_probs_bayes.csv", "stay_id")
+merge_cohorts("wbc_trajectory_probs_bayes_cohort*.csv", "wbc_trajectory_probs_bayes.csv", "stay_id")
+merge_cohorts("platelet_trajectory_probs_bayes_cohort*.csv", "platelet_trajectory_probs_bayes.csv", "stay_id")
+merge_cohorts("sepsis_trajectory_probs_cohort*.csv", "sepsis_trajectory_probs.csv", "stay_id")
 EOF
 
 echo ""

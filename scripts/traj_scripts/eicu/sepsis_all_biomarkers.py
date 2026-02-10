@@ -107,7 +107,7 @@ BIOMARKERS = {
         'traj_types': ('stable', 'gradual_increase', 'rapid_increase'),
         'label_map': {'nonprogression': 'stable', 'linear': 'gradual_increase', 'nonlinear': 'rapid_increase'},
     },
-    'platelets': {
+    'platelet': {
         'file': 'platelets_timeseries.csv',
         'value_col': 'platelet',
         'flat_thr': -20.0,
@@ -119,7 +119,7 @@ BIOMARKERS = {
     },
 }
 
-def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window_days, n_batches):
+def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window_days, n_batches, probs_output_path, cohort_patients=None):
     """
     Compute trajectory probabilities for a single biomarker.
     
@@ -161,6 +161,8 @@ def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window
         value_col: 'lab_value'
     })
     traj_input = traj_input.dropna(subset=['lab_value']).sort_values(by=['patientid', 'time_days'])
+    if cohort_patients is not None:
+        traj_input = traj_input[traj_input['patientid'].isin(cohort_patients)]
     
     # Configure model
     config = BayesConfig(
@@ -242,6 +244,27 @@ def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window
     # Select relevant columns
     result_cols = ['stay_id', 'time_day', f'{biomarker_name}_stable', f'{biomarker_name}_gradual', f'{biomarker_name}_rapid']
     result = trajectory_probs[result_cols].copy()
+
+    # Validate probabilities
+    prob_cols = [f'{biomarker_name}_stable', f'{biomarker_name}_gradual', f'{biomarker_name}_rapid']
+    missing = result[prob_cols].isna().any(axis=1).sum()
+    if missing > 0:
+        print(f"   WARNING: Missing probabilities for {missing} rows in {biomarker_name} time series.")
+
+    out_of_range = ((result[prob_cols] < 0) | (result[prob_cols] > 1)).any(axis=1).sum()
+    if out_of_range > 0:
+        print(f"   ERROR: {out_of_range} rows have probabilities outside [0, 1] for {biomarker_name}.")
+        sys.exit(2)
+
+    sum_probs = result[prob_cols].sum(axis=1)
+    invalid_sum = (np.abs(sum_probs - 1.0) > 0.05).sum()
+    if invalid_sum > 0:
+        print(f"   WARNING: {invalid_sum} rows have probabilities not summing to ~1 for {biomarker_name}.")
+
+    # Save time series probabilities
+    probs_output_path.parent.mkdir(parents=True, exist_ok=True)
+    result.to_csv(probs_output_path, index=False)
+    print(f"   ✓ Saved {biomarker_name} probabilities: {probs_output_path}")
     
     print(f"\n✓ Computed {len(result):,} trajectory timepoints for {biomarker_name}")
     
@@ -257,23 +280,36 @@ def main():
                        help='Path to prediction dataset for merging')
     parser.add_argument('--output', type=str,
                        default='results/eicu/sepsis/sepsis_trajectory_probs.csv',
-                       help='Path to save merged trajectory probabilities')
+                       help='Path to save merged prediction dataset with probabilities')
+    parser.add_argument('--merged-output', type=str,
+                       default=None,
+                       help='Optional path to save merged prediction dataset (overrides --output)')
     parser.add_argument('--window-days', type=float, default=3.0,
                        help='Lookback window in days (default: 3.0)')
     parser.add_argument('--n-batches', type=int, default=8,
                        help='Number of batches per biomarker (default: 8)')
+    parser.add_argument('--cohort-splits', type=int, default=1,
+                       help='Total number of cohort splits (default: 1)')
+    parser.add_argument('--cohort-index', type=int, default=0,
+                       help='Which cohort split to process (0-indexed)')
     
     args = parser.parse_args()
+
+    if args.cohort_index < 0 or args.cohort_index >= args.cohort_splits:
+        print(f"ERROR: cohort-index must be between 0 and {args.cohort_splits - 1}")
+        sys.exit(1)
     
     data_dir = Path(args.data_dir)
     
     print("="*80)
     print("eICU Sepsis Multi-Biomarker Trajectory Modeling")
     print("="*80)
-    print(f"\nBiomarkers: lactate, WBC, platelets")
+    print(f"\nBiomarkers: lactate, WBC, platelet")
     print(f"Data directory: {data_dir}")
     print(f"Prediction dataset: {args.pred_dataset}")
     print(f"Window: {args.window_days} days")
+    if args.cohort_splits > 1:
+        print(f"Sub-cohort: {args.cohort_index + 1}/{args.cohort_splits}")
     
     # PRE-COMPILE PyTensor functions once (before all biomarkers)
     dummy_config = BayesConfig(
@@ -285,16 +321,38 @@ def main():
     )
     precompile_pytensor_functions(dummy_config)
     
+    # Determine cohort split using prediction dataset (preferred)
+    cohort_patients = None
+    if args.cohort_splits > 1 and Path(args.pred_dataset).exists():
+        prediction_dataset = pd.read_csv(args.pred_dataset)
+        all_patients = prediction_dataset['stay_id'].unique()
+        total_patients = len(all_patients)
+        cohort_size = total_patients // args.cohort_splits
+        start_idx = args.cohort_index * cohort_size
+        end_idx = total_patients if args.cohort_index == args.cohort_splits - 1 else start_idx + cohort_size
+        cohort_patients = all_patients[start_idx:end_idx]
+
+        print(f"\n📊 Sub-cohort {args.cohort_index + 1}/{args.cohort_splits}:")
+        print(f"   Processing patients {start_idx:,} to {end_idx:,} (of {total_patients:,} total)")
+        print(f"   Cohort size: {len(cohort_patients):,} patients")
+
     # Compute trajectories for each biomarker
     biomarker_results = {}
     
     for biomarker_name, config_dict in BIOMARKERS.items():
+        probs_output_path = data_dir / f"{biomarker_name}_trajectory_probs_bayes.csv"
+        if args.cohort_splits > 1:
+            stem = probs_output_path.stem
+            suffix = probs_output_path.suffix
+            probs_output_path = probs_output_path.parent / f"{stem}_cohort{args.cohort_index:02d}{suffix}"
         result = compute_biomarker_trajectories(
             biomarker_name=biomarker_name,
             config_dict=config_dict,
             data_dir=data_dir,
             window_days=args.window_days,
-            n_batches=args.n_batches
+            n_batches=args.n_batches,
+            probs_output_path=probs_output_path,
+            cohort_patients=cohort_patients,
         )
         
         if result is not None:
@@ -311,6 +369,8 @@ def main():
     
     print(f"\nLoading prediction dataset: {args.pred_dataset}")
     prediction_dataset = pd.read_csv(args.pred_dataset)
+    if cohort_patients is not None:
+        prediction_dataset = prediction_dataset[prediction_dataset['stay_id'].isin(cohort_patients)]
     print(f"   Samples: {len(prediction_dataset):,}")
     print(f"   Patients: {prediction_dataset['stay_id'].nunique():,}")
     
@@ -340,8 +400,29 @@ def main():
         non_missing = merged[col].notna().sum()
         print(f"   {col:30s}: {non_missing:7,} non-missing ({100*non_missing/len(merged):5.1f}%)")
     
-    # Save
-    output_path = Path(args.output)
+    # Validate merged dataset
+    for biomarker_name in biomarker_results.keys():
+        prob_cols = [f'{biomarker_name}_stable', f'{biomarker_name}_gradual', f'{biomarker_name}_rapid']
+        missing = merged[prob_cols].isna().any(axis=1).sum()
+        if missing > 0:
+            print(f"   WARNING: Missing probabilities for {missing} rows in merged {biomarker_name}.")
+
+        out_of_range = ((merged[prob_cols] < 0) | (merged[prob_cols] > 1)).any(axis=1).sum()
+        if out_of_range > 0:
+            print(f"   ERROR: {out_of_range} rows have probabilities outside [0, 1] for merged {biomarker_name}.")
+            sys.exit(2)
+
+        sum_probs = merged[prob_cols].sum(axis=1)
+        invalid_sum = (np.abs(sum_probs - 1.0) > 0.05).sum()
+        if invalid_sum > 0:
+            print(f"   WARNING: {invalid_sum} rows have probabilities not summing to ~1 for merged {biomarker_name}.")
+
+    # Save merged dataset
+    output_path = Path(args.merged_output) if args.merged_output else Path(args.output)
+    if args.cohort_splits > 1:
+        stem = output_path.stem
+        suffix = output_path.suffix
+        output_path = output_path.parent / f"{stem}_cohort{args.cohort_index:02d}{suffix}"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     merged.to_csv(output_path, index=False)
     

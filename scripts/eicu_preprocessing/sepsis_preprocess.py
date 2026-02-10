@@ -105,11 +105,16 @@ print(f"  Patients with WBC: {wbc_ts['stay_id'].nunique():,}")
 print(f"  Total platelet measurements: {len(platelet_ts):,}")
 print(f"  Patients with platelets: {platelet_ts['stay_id'].nunique():,}")
 
-# Calculate baseline lactate (first measurement)
-print("\n[3/10] Calculating baseline lactate...")
-baseline_lactate = lactate_ts.sort_values('time_days').groupby('stay_id').agg({
-    'lactate': 'first'
-}).reset_index().rename(columns={'lactate': 'baseline_lactate'})
+# Calculate baseline lactate (first 24h)
+print("\n[3/10] Calculating baseline lactate (first 24h)...")
+baseline_window = lactate_ts[lactate_ts['time_days'] <= 1.0]
+baseline_lactate = (
+    baseline_window.sort_values('time_days')
+    .groupby('stay_id')['lactate']
+    .first()
+    .reset_index()
+    .rename(columns={'lactate': 'baseline_lactate'})
+)
 
 print(f"  Patients with baseline: {len(baseline_lactate):,}")
 print(f"  Mean baseline: {baseline_lactate['baseline_lactate'].mean():.2f} mmol/L")
@@ -338,9 +343,9 @@ for stay_id, grp in tqdm(daily_features.groupby('stay_id'), desc="  Patients"):
             excluded_counts['already_shock'] += 1
             continue
         
-        # Define prediction window
-        prediction_start = current_time + PREDICTION_GAP_DAYS
-        prediction_end = current_time + PREDICTION_GAP_DAYS + PREDICTION_WINDOW_DAYS
+        # Define prediction window (+1 day shift to match end-of-day prediction)
+        prediction_start = current_time + PREDICTION_GAP_DAYS + 1
+        prediction_end = current_time + PREDICTION_GAP_DAYS + PREDICTION_WINDOW_DAYS + 1
         
         future_window = patient_lactate[
             (patient_lactate['time_days'] >= prediction_start) &

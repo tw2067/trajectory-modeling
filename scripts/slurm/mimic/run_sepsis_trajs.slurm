@@ -1,29 +1,41 @@
 #!/bin/bash
 #SBATCH --job-name=mimic_sepsis_trajs
-#SBATCH --output=/home/gaga/tamarw1/trajectory-modeling/logs/outs/mimic_sepsis_%A.out
-#SBATCH --error=/home/gaga/tamarw1/trajectory-modeling/logs/errs/mimic_sepsis_%A.err
+#SBATCH --output=/home/gaga/tamarw1/trajectory-modeling/logs/outs/mimic_sepsis_%A_%a.out
+#SBATCH --error=/home/gaga/tamarw1/trajectory-modeling/logs/errs/mimic_sepsis_%A_%a.err
 #SBATCH --time=12:00:00
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=128G
 
-#SBATCH --gres=gpu:1
-#SBATCH --account=gpu-research
-#SBATCH --partition=gpu-shamir
+#SBATCH --partition=cpu-killable
+#SBATCH --array=0-9
 
 
 # Navigate to project directory
 cd /home/gaga/tamarw1/trajectory-modeling || exit 1
 
-# Run sepsis trajectories
-echo "Starting SEPSIS TRAJS run at $(date)"
+# Activate conda environment
+source /home/gaga/tamarw1/anaconda3/etc/profile.d/conda.sh
+conda activate pymc_env
+
+# Cohort splitting
+COHORT_SPLITS=10
+COHORT_INDEX=${SLURM_ARRAY_TASK_ID}
+
+# Run sepsis trajectories for all biomarkers in one pass
+echo "Starting MIMIC SEPSIS TRAJS run at $(date)"
 echo ""
 
-python scripts/notebooks/sepsis_trajs.py
+python /home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/mimic/sepsis_trajs.py \
+		--biomarker all \
+		--data-dir /home/gaga/tamarw1/trajectory-modeling/results/mimic/sepsis \
+		--pred-dataset /home/gaga/tamarw1/trajectory-modeling/results/mimic/sepsis/sepsis_prediction_dataset.csv \
+		--merged-output /home/gaga/tamarw1/trajectory-modeling/results/mimic/sepsis/sepsis_prediction_dataset_with_probs.csv \
+		--cohort-splits ${COHORT_SPLITS} \
+		--cohort-index ${COHORT_INDEX}
 
 EXIT_CODE=$?
 
 echo ""
-echo "SEPSIS TRAJS run completed at $(date) with exit code $EXIT_CODE"
+echo "MIMIC SEPSIS TRAJS run completed at $(date) with exit code $EXIT_CODE"
 
-# Exit with the same code as the Python script
 exit $EXIT_CODE

@@ -1,16 +1,16 @@
 #!/bin/bash
-# Merge all AKI trajectory sub-cohort files into a single dataset
+# Merge all MIMIC ventilator trajectory sub-cohort files into single datasets
 
-cd /home/gaga/tamarw1/trajectory-modeling
+cd /home/gaga/tamarw1/trajectory-modeling || exit 1
 
-echo "Merging AKI trajectory probability sub-cohorts..."
+echo "Merging MIMIC ventilator trajectory probability sub-cohorts..."
+
 echo ""
-
 python3 << 'EOF'
 import pandas as pd
 from pathlib import Path
 
-result_dir = Path("results/eicu/aki")
+result_dir = Path("results/mimic/ventilator")
 
 def merge_cohorts(pattern: str, output_name: str, id_col: str):
     cohort_files = sorted(result_dir.glob(pattern))
@@ -37,8 +37,8 @@ def merge_cohorts(pattern: str, output_name: str, id_col: str):
     print(f"  Total rows: {len(merged):,}")
     print(f"  Total patients: {merged[id_col].nunique():,}")
 
-merge_cohorts("aki_trajectory_probs_bayes_cohort*.csv", "aki_trajectory_probs_bayes.csv", "stay_id")
-merge_cohorts("aki_trajectory_probs_cohort*.csv", "aki_trajectory_probs.csv", "stay_id")
+merge_cohorts("pf_trajectory_probs_bayes_cohort*.csv", "pf_trajectory_probs_bayes.csv", "hadm_id")
+merge_cohorts("ventilator_prediction_dataset_with_probs_cohort*.csv", "ventilator_prediction_dataset_with_probs.csv", "hadm_id")
 EOF
 
 echo ""

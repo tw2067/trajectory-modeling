@@ -129,15 +129,27 @@ if len(pf_ts) == 0:
     loader.close()
     sys.exit(1)
 
+# Filter physiologically plausible P/F ratios
+pf_ts = pf_ts[(pf_ts['pf_ratio'] >= 50) & (pf_ts['pf_ratio'] <= 600)]
+if len(pf_ts) == 0:
+    print("  ERROR: No valid P/F ratio pairs after filtering!")
+    loader.close()
+    sys.exit(1)
+
 print(f"  Total P/F ratio measurements: {len(pf_ts):,}")
 print(f"  Patients with P/F ratio: {pf_ts['stay_id'].nunique():,}")
 print(f"  Mean P/F ratio: {pf_ts['pf_ratio'].mean():.1f}")
 
 # Calculate baseline P/F ratio (first 24h)
 print("\n[3/10] Calculating baseline P/F ratio (first 24h)...")
-baseline_pf = pf_ts[pf_ts['time_days'] <= 1.0].groupby('stay_id').agg({
-    'pf_ratio': 'mean'  # Average over first 24h
-}).reset_index().rename(columns={'pf_ratio': 'baseline_pf_ratio'})
+baseline_pf = (
+    pf_ts[pf_ts['time_days'] <= 1.0]
+    .sort_values('time_days')
+    .groupby('stay_id')['pf_ratio']
+    .first()
+    .reset_index()
+    .rename(columns={'pf_ratio': 'baseline_pf_ratio'})
+)
 
 print(f"  Patients with baseline: {len(baseline_pf):,}")
 print(f"  Mean baseline P/F: {baseline_pf['baseline_pf_ratio'].mean():.1f}")
@@ -342,9 +354,9 @@ for stay_id, grp in tqdm(daily_features.groupby('stay_id'), desc="  Patients"):
             excluded_counts['already_weaned'] += 1
             continue
         
-        # Define prediction window
-        prediction_start = current_time + PREDICTION_GAP_DAYS
-        prediction_end = current_time + PREDICTION_GAP_DAYS + PREDICTION_WINDOW_DAYS
+        # Define prediction window (+1 day shift to match end-of-day prediction)
+        prediction_start = current_time + PREDICTION_GAP_DAYS + 1
+        prediction_end = current_time + PREDICTION_GAP_DAYS + PREDICTION_WINDOW_DAYS + 1
         
         future_window = patient_pf[
             (patient_pf['time_days'] >= prediction_start) &

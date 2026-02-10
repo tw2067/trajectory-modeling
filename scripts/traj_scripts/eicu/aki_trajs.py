@@ -96,7 +96,13 @@ def main():
                        help='Path to prediction dataset for merging')
     parser.add_argument('--output', type=str,
                        default='results/eicu/aki/aki_trajectory_probs.csv',
-                       help='Path to save trajectory probabilities')
+                       help='Path to save prediction dataset merged with probabilities')
+    parser.add_argument('--probs-output', type=str,
+                       default='results/eicu/aki/aki_trajectory_probs_bayes.csv',
+                       help='Path to save time series with trajectory probabilities')
+    parser.add_argument('--merged-output', type=str,
+                       default=None,
+                       help='Optional path to save merged prediction dataset (overrides --output)')
     parser.add_argument('--window-days', type=float, default=7.0,
                        help='Lookback window in days (default: 7.0)')
     parser.add_argument('--flat-thr', type=float, default=0.1,
@@ -190,7 +196,7 @@ def main():
         sampler='pymc',
         target_accept=0.99,
         chains=4,
-        n_jobs=32, 
+        n_jobs=-1,
         class_func=pos_flags_from_traj,
         traj_types=('prolonged_nonprogression', 'linear_decline', 'nonlinear'),
     )
@@ -249,37 +255,56 @@ def main():
         'patientid': 'stay_id'
     })
     
-    # Load prediction dataset and merge
-    print(f"\n4. Loading prediction dataset: {args.pred_dataset}")
-    prediction_dataset = pd.read_csv(args.pred_dataset)
-    print(f"   Samples: {len(prediction_dataset):,}")
-    
-    dataset_with_probs = prediction_dataset.merge(
-        trajectory_probs[['stay_id', 'time_day', 'prob_stable', 'prob_gradual_increase', 'prob_rapid_increase']],
+    prob_cols = ['prob_stable', 'prob_gradual_increase', 'prob_rapid_increase']
+
+    def validate_probs(df: pd.DataFrame, label: str) -> None:
+        missing = df[prob_cols].isna().any(axis=1).sum()
+        if missing > 0:
+            print(f"   WARNING: Missing probabilities for {missing} rows in {label}.")
+
+        out_of_range = ((df[prob_cols] < 0) | (df[prob_cols] > 1)).any(axis=1).sum()
+        if out_of_range > 0:
+            print(f"   ERROR: {out_of_range} rows have probabilities outside [0, 1] in {label}.")
+            sys.exit(2)
+
+        sum_probs = df[prob_cols].sum(axis=1)
+        invalid_sum = (np.abs(sum_probs - 1.0) > 0.05).sum()
+        if invalid_sum > 0:
+            print(f"   WARNING: {invalid_sum} rows have probabilities not summing to ~1 in {label}.")
+
+    # Save time series with probabilities
+    probs_ts = creatinine_ts.merge(
+        trajectory_probs[['stay_id', 'time_day'] + prob_cols],
         on=['stay_id', 'time_day'],
         how='left'
     )
-    
+    validate_probs(probs_ts, "time series")
+
+    probs_output_path = Path(args.probs_output)
+    if args.cohort_splits > 1:
+        stem = probs_output_path.stem
+        suffix = probs_output_path.suffix
+        probs_output_path = probs_output_path.parent / f"{stem}_cohort{args.cohort_index:02d}{suffix}"
+    probs_output_path.parent.mkdir(parents=True, exist_ok=True)
+    probs_ts.to_csv(probs_output_path, index=False)
+    print(f"\n✓ Saved time series probabilities: {probs_output_path}")
+
+    # Load prediction dataset and merge
+    print(f"\n4. Loading prediction dataset: {args.pred_dataset}")
+    prediction_dataset = pd.read_csv(args.pred_dataset)
+    prediction_dataset = prediction_dataset[prediction_dataset['stay_id'].isin(traj_input['patientid'].unique())]
+    print(f"   Samples: {len(prediction_dataset):,}")
+
+    dataset_with_probs = prediction_dataset.merge(
+        trajectory_probs[['stay_id', 'time_day'] + prob_cols],
+        on=['stay_id', 'time_day'],
+        how='left'
+    )
+
     print(f"\n5. Merged trajectory probabilities:")
     print(f"   Rows: {len(dataset_with_probs):,}")
-    
-    # Integrity checks
-    prob_cols = ['prob_stable', 'prob_gradual_increase', 'prob_rapid_increase']
-    missing = dataset_with_probs[prob_cols].isna().any(axis=1).sum()
-    if missing > 0:
-        print(f"   WARNING: Missing probabilities for {missing} rows.")
-        print("   Ensure raw time series covers all daily windows with sufficient points.")
 
-    out_of_range = ((dataset_with_probs[prob_cols] < 0) | (dataset_with_probs[prob_cols] > 1)).any(axis=1).sum()
-    if out_of_range > 0:
-        print(f"   ERROR: {out_of_range} rows have probabilities outside [0, 1].")
-        import sys
-        sys.exit(2)
-
-    sum_probs = dataset_with_probs[prob_cols].sum(axis=1)
-    invalid_sum = (np.abs(sum_probs - 1.0) > 0.05).sum()
-    if invalid_sum > 0:
-        print(f"   WARNING: {invalid_sum} rows have probabilities not summing to ~1.")
+    validate_probs(dataset_with_probs, "merged dataset")
 
     # Dominant trajectory
     dataset_with_probs['dominant_traj'] = dataset_with_probs[
@@ -292,8 +317,8 @@ def main():
         if len(subset) > 0:
             print(f"   {traj.replace('_', ' ').title():20s}: {len(subset):5,} ({100*len(subset)/len(dataset_with_probs):5.1f}%)")
     
-    # Save
-    output_path = Path(args.output)
+    # Save merged dataset
+    output_path = Path(args.merged_output) if args.merged_output else Path(args.output)
     
     # Modify output filename for sub-cohorts
     if args.cohort_splits > 1:

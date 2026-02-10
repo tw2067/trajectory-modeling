@@ -83,56 +83,63 @@ def fetch_vitals_labs(
     if not hadm_ids:
         return pd.DataFrame(), pd.DataFrame()
 
+    if not vital_items:
+        vital_items = []
+    if not lab_items:
+        lab_items = []
+
     vitals_frames = []
     labs_frames = []
 
     for batch in chunk_list(hadm_ids, batch_size):
-        vitals_query = f"""
-        SELECT chartevents.subject_id::INTEGER AS subject_id
-            , chartevents.hadm_id::INTEGER AS hadm_id
-            , chartevents.charttime::TIMESTAMP AS charttime
-            , chartevents.itemid::INTEGER AS itemid
-            , chartevents.valuenum::DOUBLE AS valuenum
-            , admissions.admittime::TIMESTAMP AS admittime
-        FROM chartevents
-        INNER JOIN admissions
-            ON chartevents.subject_id = admissions.subject_id
-            AND chartevents.hadm_id = admissions.hadm_id
-            AND chartevents.charttime::TIMESTAMP BETWEEN
-                (admissions.admittime::TIMESTAMP)
-                AND (admissions.dischtime::TIMESTAMP)
-            AND itemid::INTEGER IN {tuple(vital_items)}
-            AND chartevents.hadm_id::INTEGER IN {tuple(batch)}
-        WHERE chartevents.error::INTEGER IS DISTINCT FROM 1
-        """
+        if vital_items:
+            vitals_query = f"""
+            SELECT chartevents.subject_id::INTEGER AS subject_id
+                , chartevents.hadm_id::INTEGER AS hadm_id
+                , chartevents.charttime::TIMESTAMP AS charttime
+                , chartevents.itemid::INTEGER AS itemid
+                , chartevents.valuenum::DOUBLE AS valuenum
+                , admissions.admittime::TIMESTAMP AS admittime
+            FROM chartevents
+            INNER JOIN admissions
+                ON chartevents.subject_id = admissions.subject_id
+                AND chartevents.hadm_id = admissions.hadm_id
+                AND chartevents.charttime::TIMESTAMP BETWEEN
+                    (admissions.admittime::TIMESTAMP)
+                    AND (admissions.dischtime::TIMESTAMP)
+                AND itemid::INTEGER IN {tuple(vital_items)}
+                AND chartevents.hadm_id::INTEGER IN {tuple(batch)}
+            WHERE chartevents.error::INTEGER IS DISTINCT FROM 1
+            """
 
-        labs_query = f"""
-        SELECT labevents.subject_id::INTEGER AS subject_id
-            , labevents.hadm_id::INTEGER AS hadm_id
-            , labevents.charttime::TIMESTAMP AS charttime
-            , labevents.itemid::INTEGER AS itemid
-            , labevents.valuenum::DOUBLE AS valuenum
-            , admissions.admittime::TIMESTAMP AS admittime
-        FROM labevents
-        INNER JOIN admissions
-            ON labevents.subject_id = admissions.subject_id
-            AND labevents.hadm_id = admissions.hadm_id
-            AND labevents.charttime::TIMESTAMP BETWEEN
-                (admissions.admittime::TIMESTAMP)
-                AND (admissions.dischtime::TIMESTAMP)
-            AND itemid::INTEGER IN {tuple(lab_items)}
-            AND labevents.hadm_id::INTEGER IN {tuple(batch)}
-        """
+            vdf = conn.execute(vitals_query).fetchdf()
+            if len(vdf) > 0:
+                vdf.columns = vdf.columns.str.lower()
+                vitals_frames.append(vdf)
 
-        vdf = conn.execute(vitals_query).fetchdf()
-        if len(vdf) > 0:
-            vdf.columns = vdf.columns.str.lower()
-            vitals_frames.append(vdf)
+        if lab_items:
+            labs_query = f"""
+            SELECT labevents.subject_id::INTEGER AS subject_id
+                , labevents.hadm_id::INTEGER AS hadm_id
+                , labevents.charttime::TIMESTAMP AS charttime
+                , labevents.itemid::INTEGER AS itemid
+                , labevents.valuenum::DOUBLE AS valuenum
+                , admissions.admittime::TIMESTAMP AS admittime
+            FROM labevents
+            INNER JOIN admissions
+                ON labevents.subject_id = admissions.subject_id
+                AND labevents.hadm_id = admissions.hadm_id
+                AND labevents.charttime::TIMESTAMP BETWEEN
+                    (admissions.admittime::TIMESTAMP)
+                    AND (admissions.dischtime::TIMESTAMP)
+                AND itemid::INTEGER IN {tuple(lab_items)}
+                AND labevents.hadm_id::INTEGER IN {tuple(batch)}
+            """
 
-        ldf = conn.execute(labs_query).fetchdf()
-        if len(ldf) > 0:
-            ldf.columns = ldf.columns.str.lower()
-            labs_frames.append(ldf)
+            ldf = conn.execute(labs_query).fetchdf()
+            if len(ldf) > 0:
+                ldf.columns = ldf.columns.str.lower()
+                labs_frames.append(ldf)
 
     vitals_df = pd.concat(vitals_frames, ignore_index=True) if vitals_frames else pd.DataFrame()
     labs_df = pd.concat(labs_frames, ignore_index=True) if labs_frames else pd.DataFrame()

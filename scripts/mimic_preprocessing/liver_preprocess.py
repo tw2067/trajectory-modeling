@@ -10,6 +10,7 @@ Extracts:
 Outputs:
 - results/mimic/liver/bilirubin_timeseries.csv
 - results/mimic/liver/hadm_cohort.csv
+- results/mimic/liver/aclf_outcomes.csv
 - results/mimic/liver/liver_prediction_dataset.csv
 
 Usage:
@@ -75,18 +76,6 @@ WHERE
 hadm_df = conn.execute(hadm_query).fetchdf()
 hadm_df.columns = hadm_df.columns.str.lower()
 print(f"✓ Loaded {len(hadm_df):,} liver admissions")
-
-# Optional sampling (to match notebook scale)
-max_adm = int(os.environ.get("MIMIC_MAX_HADM", "5000"))
-if len(hadm_df) > max_adm:
-    hadm_subset = (
-        hadm_df.sort_values("admittime")
-        .drop_duplicates(subset=["subject_id"])["hadm_id"]
-        .sample(min(max_adm, hadm_df["subject_id"].nunique()), random_state=920)
-        .tolist()
-    )
-    hadm_df = hadm_df[hadm_df["hadm_id"].isin(hadm_subset)]
-    print(f"✓ Using {len(hadm_df):,} admissions after sampling")
 
 hadm_ids = hadm_df["hadm_id"].astype(int).tolist()
 
@@ -163,13 +152,87 @@ if len(vitals_df) > 0 and len(labs_df) > 0:
     vitals_labs_pivot = vitals_labs_pivot.reset_index()
     vitals_labs_pivot.columns = [c.lower() for c in vitals_labs_pivot.columns]
 
+    if "admittime" in vitals_labs_pivot.columns:
+        vitals_labs_pivot = vitals_labs_pivot.drop(columns=["admittime"])
+
     # Merge with cohort
     hadm_final = hadm_filtered.merge(vitals_labs_pivot, on=["hadm_id"], how="inner")
     hadm_final["time_day"] = ((pd.to_datetime(hadm_final["charttime"]) - pd.to_datetime(hadm_final["admittime"]))
                               .dt.total_seconds() / 86400.0).astype(int)
 
-    # Drop high-missing
-    hadm_final, _ = drop_high_missing_columns(hadm_final, threshold=0.7)
+    # Forward-fill imputation within each admission
+    hadm_final = hadm_final.sort_values(["hadm_id", "time_day"])
+    hadm_final = hadm_final.set_index("hadm_id").groupby(level=0).fillna(method="ffill").reset_index()
+
+    # Drop columns with >20% missing (eICU-style)
+    missing_pct = hadm_final.isnull().mean()
+    cols_to_drop = missing_pct[missing_pct > 0.2].index.tolist()
+    for col in ["hadm_id", "time_day", "bilirubin_mean", "hospital_expire_flag", "age", "gender", "baseline_bilirubin"]:
+        if col in cols_to_drop:
+            cols_to_drop.remove(col)
+    hadm_final = hadm_final.drop(columns=cols_to_drop)
+
+    # Define ACLF outcome (matches notebook logic)
+    PREDICTION_GAP_DAYS = 1.0
+    PREDICTION_WINDOW_DAYS = 5.0
+
+    aclf_events = []
+    n_in_aclf = 0
+    n_no_data = 0
+
+    hadm_final = hadm_final.drop_duplicates(subset=["hadm_id", "time_day"])
+
+    for hadm_id, grp in hadm_final.groupby("hadm_id"):
+        grp = grp.sort_values("time_day")
+        mortality = hadm_final[hadm_final["hadm_id"] == hadm_id]["hospital_expire_flag"].iloc[0]
+
+        for i in range(len(grp)):
+            current_time = grp.iloc[i]["time_day"]
+            current_bili = grp.iloc[i]["bilirubin_mean"]
+
+            # Skip if already in ACLF
+            if current_bili >= 12.0:
+                n_in_aclf += 1
+                continue
+
+            prediction_start = current_time + PREDICTION_GAP_DAYS + 1
+            prediction_end = current_time + PREDICTION_GAP_DAYS + PREDICTION_WINDOW_DAYS + 1
+
+            future_window = bili_ts[
+                (bili_ts["hadm_id"] == hadm_id)
+                & (bili_ts["time_days"] >= prediction_start)
+                & (bili_ts["time_days"] <= prediction_end)
+            ]
+
+            if len(future_window) == 0:
+                n_no_data += 1
+                continue
+
+            severe_bili = (future_window["bilirubin"] >= 12.0).any()
+            target = int(severe_bili or mortality)
+
+            aclf_events.append({
+                "hadm_id": hadm_id,
+                "time_day": current_time,
+                "target_aclf": target,
+                "current_bilirubin": current_bili,
+            })
+
+    outcome_df = pd.DataFrame(aclf_events)
+    outcome_df = outcome_df.sort_values(["hadm_id", "time_day"])
+    positive_first = outcome_df[outcome_df["target_aclf"] == 1].groupby("hadm_id").first().reset_index()
+    all_negatives = outcome_df[outcome_df["target_aclf"] == 0]
+    outcome_df = (
+        pd.concat([all_negatives, positive_first], ignore_index=True)
+        .sort_values(["hadm_id", "time_day"])
+        .reset_index(drop=True)
+    )
+
+    outcome_df.to_csv(OUTPUT_DIR / "aclf_outcomes.csv", index=False)
+    print("✓ Saved aclf_outcomes.csv")
+    print(f"   ACLF events (first per patient): {outcome_df['target_aclf'].sum():,}")
+    print(f"   Windows skipped (in ACLF at baseline): {n_in_aclf:,}")
+    print(f"   Windows skipped (no future data): {n_no_data:,}")
 
     hadm_final.to_csv(OUTPUT_DIR / "liver_prediction_dataset.csv", index=False)
     print("✓ Saved liver_prediction_dataset.csv")

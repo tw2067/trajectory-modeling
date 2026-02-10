@@ -32,7 +32,7 @@ from tqdm import tqdm
 PREDICTION_GAP_DAYS = 0.5      # Don't predict events within 12h
 PREDICTION_WINDOW_DAYS = 4.0   # Predict AKI Stage 3 within 4 days after gap
 LOOKBACK_DAYS = 7.0            # Use 7 days of historical data for features
-MIN_CREAT_MEASUREMENTS = 3     # Minimum creatinine measurements required
+MIN_CREAT_MEASUREMENTS = 5     # Minimum creatinine measurements required (match MIMIC)
 OUTPUT_PATH = 'results/eicu/aki/aki_prediction_dataset.csv'
 
 MAX_PATIENTS = None            # Process full cohort
@@ -74,11 +74,16 @@ creatinine_ts = creatinine_ts.rename(columns={
 print(f"  Total creatinine measurements: {len(creatinine_ts):,}")
 print(f"  Patients with creatinine: {creatinine_ts['stay_id'].nunique():,}")
 
-# Calculate baseline creatinine (first measurement)
-print("\n[3/10] Calculating baseline creatinine...")
-baseline_creat = creatinine_ts.sort_values('time_days').groupby('stay_id').agg({
-    'creatinine': 'first'
-}).reset_index().rename(columns={'creatinine': 'baseline_creatinine'})
+# Calculate baseline creatinine (first 24h)
+print("\n[3/10] Calculating baseline creatinine (first 24h)...")
+baseline_window = creatinine_ts[creatinine_ts['time_days'] <= 1.0]
+baseline_creat = (
+    baseline_window.sort_values('time_days')
+    .groupby('stay_id')['creatinine']
+    .first()
+    .reset_index()
+    .rename(columns={'creatinine': 'baseline_creatinine'})
+)
 
 print(f"  Patients with baseline: {len(baseline_creat):,}")
 print(f"  Mean baseline: {baseline_creat['baseline_creatinine'].mean():.2f} mg/dL")
@@ -95,6 +100,30 @@ cohort_filtered = cohort_filtered.rename(columns={'patientunitstayid': 'stay_id'
 cohort_filtered = cohort_filtered.merge(baseline_creat, on='stay_id', how='inner')
 print(f"  Final cohort size: {len(cohort_filtered):,}")
 
+# Prepare for batch loading
+stay_ids_list = cohort_filtered['stay_id'].tolist()
+BATCH_SIZE_VITALS = 500
+
+# Load dialysis events (best-effort via infusionDrug)
+print(f"\n[5/10] Loading dialysis events...")
+dialysis_terms = [
+    'dialysis', 'hemodialysis', 'haemodialysis', 'hemofiltration',
+    'cvvh', 'cvvhd', 'cvvhdf', 'crrt', 'rrt', 'renal replacement'
+]
+dialysis_list = []
+for i in tqdm(range(0, len(stay_ids_list), BATCH_SIZE_VITALS), desc="  Dialysis batches"):
+    batch_ids = stay_ids_list[i:i+BATCH_SIZE_VITALS]
+    batch_dialysis = loader.load_medications(dialysis_terms, batch_ids, match_mode="contains")
+    if len(batch_dialysis) > 0:
+        dialysis_list.append(batch_dialysis)
+
+if len(dialysis_list) > 0:
+    dialysis_events = pd.concat(dialysis_list, ignore_index=True)
+    dialysis_events['time_days'] = dialysis_events['med_time_hours'] / 24.0
+    dialysis_events = dialysis_events.rename(columns={'patientunitstayid': 'stay_id'})
+else:
+    dialysis_events = pd.DataFrame(columns=['stay_id', 'time_days'])
+
 # Load vitals and labs for feature generation
 print(f"\n[5/10] Loading vitals and labs for daily aggregation...")
 print("  (This will take several minutes...)")
@@ -109,10 +138,7 @@ lab_names = [
  # Prepare for batch loading
 
 # Load all at once in batches for efficiency
-stay_ids_list = cohort_filtered['stay_id'].tolist()
 print(f"  Loading vitals/labs for {len(stay_ids_list)} patients in batches...")
-
-BATCH_SIZE_VITALS = 500
 labs_data = []
 vitals_data = []
 bp_data = []
@@ -277,9 +303,9 @@ for stay_id, grp in tqdm(daily_features.groupby('stay_id'), desc="  Patients"):
             excluded_counts['already_aki'] += 1
             continue
         
-        # Define prediction window
-        prediction_start = current_time + PREDICTION_GAP_DAYS
-        prediction_end = current_time + PREDICTION_GAP_DAYS + PREDICTION_WINDOW_DAYS
+        # Define prediction window (+1 day shift to match end-of-day prediction)
+        prediction_start = current_time + PREDICTION_GAP_DAYS + 1
+        prediction_end = current_time + PREDICTION_GAP_DAYS + PREDICTION_WINDOW_DAYS + 1
         
         future_window = patient_creat[
             (patient_creat['time_days'] >= prediction_start) &
@@ -296,10 +322,19 @@ for stay_id, grp in tqdm(daily_features.groupby('stay_id'), desc="  Patients"):
             ((future_window['creatinine'] >= 4.0) &
              (future_window['creatinine'] - current_creat >= 0.5)).any()
         )
+
+        dialysis_in_window = False
+        if len(dialysis_events) > 0:
+            dialysis_window = dialysis_events[
+                (dialysis_events['stay_id'] == stay_id) &
+                (dialysis_events['time_days'] >= prediction_start) &
+                (dialysis_events['time_days'] <= prediction_end)
+            ]
+            dialysis_in_window = len(dialysis_window) > 0
         
         # Create prediction row
         row = grp.iloc[i].to_dict()
-        row['target_aki_stage3'] = int(aki_stage3)
+        row['target_aki_stage3'] = int(aki_stage3 or dialysis_in_window)
         row['current_creatinine'] = current_creat
         row['creat_fold_change'] = current_creat / baseline if baseline > 0 else np.nan
         aki_events.append(row)

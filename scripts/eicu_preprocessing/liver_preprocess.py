@@ -78,11 +78,16 @@ bilirubin_ts = bilirubin_ts.rename(columns={
 print(f"  Total bilirubin measurements: {len(bilirubin_ts):,}")
 print(f"  Patients with bilirubin: {bilirubin_ts['stay_id'].nunique():,}")
 
-# Calculate baseline bilirubin (first measurement)
-print("\n[3/10] Calculating baseline bilirubin...")
-baseline_bili = bilirubin_ts.sort_values('time_days').groupby('stay_id').agg({
-    'bilirubin': 'first'
-}).reset_index().rename(columns={'bilirubin': 'baseline_bilirubin'})
+# Calculate baseline bilirubin (first 24h)
+print("\n[3/10] Calculating baseline bilirubin (first 24h)...")
+baseline_window = bilirubin_ts[bilirubin_ts['time_days'] <= 1.0]
+baseline_bili = (
+    baseline_window.sort_values('time_days')
+    .groupby('stay_id')['bilirubin']
+    .first()
+    .reset_index()
+    .rename(columns={'bilirubin': 'baseline_bilirubin'})
+)
 
 print(f"  Patients with baseline: {len(baseline_bili):,}")
 print(f"  Mean baseline: {baseline_bili['baseline_bilirubin'].mean():.2f} mg/dL")
@@ -280,9 +285,9 @@ for stay_id, grp in tqdm(daily_features.groupby('stay_id'), desc="  Patients"):
             excluded_counts['already_aclf'] += 1
             continue
         
-        # Define prediction window
-        prediction_start = current_time + PREDICTION_GAP_DAYS
-        prediction_end = current_time + PREDICTION_GAP_DAYS + PREDICTION_WINDOW_DAYS
+        # Define prediction window (+1 day shift to match end-of-day prediction)
+        prediction_start = current_time + PREDICTION_GAP_DAYS + 1
+        prediction_end = current_time + PREDICTION_GAP_DAYS + PREDICTION_WINDOW_DAYS + 1
         
         future_window = patient_bili[
             (patient_bili['time_days'] >= prediction_start) &

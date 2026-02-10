@@ -1,15 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name=eicu_aki_array
-#SBATCH --output=/home/gaga/tamarw1/trajectory-modeling/logs/outs/eicu_aki_%A_%a.out
-#SBATCH --error=/home/gaga/tamarw1/trajectory-modeling/logs/errs/eicu_aki_%A_%a.err
-#SBATCH --array=0-7
+#SBATCH --job-name=eicu_aki_cohort3
+#SBATCH --output=/home/gaga/tamarw1/trajectory-modeling/logs/outs/eicu_aki_cohort3_%j.out
+#SBATCH --error=/home/gaga/tamarw1/trajectory-modeling/logs/errs/eicu_aki_cohort3_%j.err
 #SBATCH --time=24:00:00
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=64G
-
-
 #SBATCH --partition=cpu-killable
-
 
 # Navigate to project directory
 cd /home/gaga/tamarw1/trajectory-modeling || exit 1
@@ -18,13 +14,11 @@ cd /home/gaga/tamarw1/trajectory-modeling || exit 1
 source /home/gaga/tamarw1/anaconda3/etc/profile.d/conda.sh
 conda activate pymc_env
 
-# Array job setup: 8 cohorts total, processing cohort $SLURM_ARRAY_TASK_ID
+# Run only sub-cohort 3/8 (0-indexed cohort 2)
 TOTAL_COHORTS=8
-COHORT_INDEX=$SLURM_ARRAY_TASK_ID
+COHORT_INDEX=2
 
-# Run eICU AKI trajectory computation for this sub-cohort
-echo "Starting eICU AKI TRAJsS array job at $(date)"
-echo "Processing sub-cohort: $((COHORT_INDEX + 1))/$TOTAL_COHORTS"
+echo "Starting eICU AKI TRAJs for sub-cohort 3/8 at $(date)"
 echo ""
 
 python /home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/eicu/aki_trajs.py \
@@ -42,7 +36,6 @@ python /home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/eicu/aki_traj
 EXIT_CODE=$?
 
 echo ""
-echo "Sub-cohort $((COHORT_INDEX + 1))/$TOTAL_COHORTS completed at $(date) with exit code $EXIT_CODE"
+echo "Sub-cohort 3/8 completed at $(date) with exit code $EXIT_CODE"
 
-# Exit with the same code as the Python script
 exit $EXIT_CODE
