@@ -1,60 +1,72 @@
-# TrajPS: Trajectory-Based Propensity Score Modeling
+# Trajectory Features: Temporal Biomarker Trajectory Extraction
 
-Unified interface & data pipeline for trajectory-informed PS using:
-- Deep (GRU-D / TCN / Transformer, binned Cox or discrete hazard)
-- Bayesian posterior trajectory features
-- GAM beta-coefficient covariates
+Extract rich temporal features from longitudinal biomarker data for clinical prediction tasks.
 
-## Quick backend recipes
+## Backends
 
-### Install
+- **Bayesian** (MCMC): Full posterior distributions via spline-based Bayesian sampling (slow, precise)
+- **Bootstrap**: Fast resampling-based trajectories with splines (10-100x faster, comparable accuracy)
+
+## Core Functionality
+
+Classify longitudinal biomarker patterns into trajectory types:
+- **Stable/Nonprogression**: Minimal change over time
+- **Linear increase/decline**: Consistent slope
+- **Nonlinear/Rapid change**: Accelerating patterns
+
+## Installation
+
 ```bash
-# choose only what you need
-pip install -e .[deep]
+# Bayesian backend (MCMC)
 pip install -e .[bayes]
-pip install -e .[gam]
-````
 
-### Data config (features & binning)
-Edit ```configs/data.yaml```. Example:
-```yaml
-seed: 920
-n_patients: 120
-bin_width: 0.0833333333   # monthly
-embed_features: ["eGFR", "HbA1c"]   # modeled as trajectories
-agg_features:   ["SBP", "MedA"]     # aggregated covariates
+# Bootstrap backend (fast)
+pip install -e .[bootstrap]
+
+# Evaluation tools
+pip install -e .[evaluation]
+
+# Everything
+pip install -e .[all]
 ```
 
-### Train/Fit and Save
-```bash
-# Deep (GRU-D + binned Cox head)
-python scripts/train.py --backend deep --data_cfg configs/data.yaml --train_cfg configs/deep.yaml
+## Quick Start
 
-# Bayesian trajectories (posterior feature probabilities → Cox TVF)
-python scripts/train.py --backend bayes --data_cfg configs/data.yaml --train_cfg configs/bayes.yaml
+### Extract Trajectory Features
 
-# GAM trajectories (windowed β-coefficients → Cox TVF)
-python scripts/train.py --backend gam --data_cfg configs/data.yaml --train_cfg configs/gam.yaml
+```python
+from traj_features.backends.bootstrap import BootstrapTrajPS, BootstrapConfig
+from traj_features.backends.bayes.classify import pos_flags_from_traj
+
+# Configure (example: P/F ratio improvement trajectories)
+config = BootstrapConfig(
+    window_years=3.0,
+    n_bootstrap=500,
+    flat_thr=10.0,
+    decline_thr=30.0,
+    class_func=pos_flags_from_traj
+)
+
+# Extract features
+model = BootstrapTrajPS(cfg=config)
+trajectory_probs = model.embed(longitudinal_data)
+# Returns: DataFrame with prob_stable, prob_gradual_improvement, prob_rapid_improvement
 ```
 
-### Artifacts
-* ```artifacts/deep_cox_binned.pt```
-* ```artifacts/bayes_cox_tvf.pkl```
-* ```artifacts/gam_cox_tvf.pkl```
+### Clinical Dataset Examples
 
-### Predict time-varying PS
 ```bash
-# Deep (needs the deep checkpoint)
-python scripts/predict_ps.py --backend deep --model_path artifacts/deep_cox_binned.pt \
-  --data_cfg configs/data.yaml --out data/ps_deep.parquet --export_embeddings
+# AKI (serum creatinine trajectories)
+python scripts/hirid_aki_trajs.py --backend bootstrap
 
-# Bayesian (needs a saved CoxTVF)
-python scripts/predict_ps.py --backend bayes --model_path artifacts/bayes_cox_tvf.pkl \
-  --data_cfg configs/data.yaml --train_cfg configs/bayes.yaml --out data/ps_bayes.parquet
+# Sepsis (lactate, WBC, platelets)
+python scripts/hirid_sepsis_trajs.py --backend bootstrap
 
-# GAM (needs a saved CoxTVF)
-python scripts/predict_ps.py --backend gam --model_path artifacts/gam_cox_tvf.pkl \
-  --data_cfg configs/data.yaml --train_cfg configs/gam.yaml --out data/ps_gam.parquet
+# Ventilator weaning (P/F ratio)
+python scripts/hirid_ventilator_trajs.py --backend bootstrap
+
+# Compare backends
+python scripts/compare_bootstrap_vs_bayes.py
 ```
 
 ## `.gitignore`
