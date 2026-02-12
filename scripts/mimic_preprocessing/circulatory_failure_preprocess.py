@@ -274,20 +274,25 @@ if len(vitals_df) > 0 and len(labs_df) > 0:
             failure_events.append(row)
 
     outcome_df = pd.DataFrame(failure_events)
-    outcome_df = outcome_df.sort_values(["hadm_id", "time_hour"])
-    positive_first = outcome_df[outcome_df["target_circulatory_failure"] == 1].groupby("hadm_id").first().reset_index()
-    all_negatives = outcome_df[outcome_df["target_circulatory_failure"] == 0]
-    outcome_df = (
-        pd.concat([all_negatives, positive_first], ignore_index=True)
-        .sort_values(["hadm_id", "time_hour"])
-        .reset_index(drop=True)
-    )
+    if outcome_df.empty:
+        outcome_df = pd.DataFrame(columns=list(hadm_final.columns) + ["target_circulatory_failure"])
+        outcome_df.to_csv(OUTPUT_DIR / "circulatory_failure_prediction_dataset.csv", index=False)
+        print("⚠️ No valid prediction windows; saved empty circulatory_failure_prediction_dataset.csv")
+    else:
+        outcome_df = outcome_df.sort_values(["hadm_id", "time_hour"])
+        positive_first = outcome_df[outcome_df["target_circulatory_failure"] == 1].groupby("hadm_id").first().reset_index()
+        all_negatives = outcome_df[outcome_df["target_circulatory_failure"] == 0]
+        outcome_df = (
+            pd.concat([all_negatives, positive_first], ignore_index=True)
+            .sort_values(["hadm_id", "time_hour"])
+            .reset_index(drop=True)
+        )
 
-    outcome_df.to_csv(OUTPUT_DIR / "circulatory_failure_prediction_dataset.csv", index=False)
-    print("✓ Saved circulatory_failure_prediction_dataset.csv")
-    print(f"   Positive events (first per patient): {outcome_df['target_circulatory_failure'].sum():,}")
-    print(f"   Skipped (already failure): {excluded['already_failure']:,}")
-    print(f"   Skipped (no future data): {excluded['no_future_data']:,}")
+        outcome_df.to_csv(OUTPUT_DIR / "circulatory_failure_prediction_dataset.csv", index=False)
+        print("✓ Saved circulatory_failure_prediction_dataset.csv")
+        print(f"   Positive events (first per patient): {outcome_df['target_circulatory_failure'].sum():,}")
+        print(f"   Skipped (already failure): {excluded['already_failure']:,}")
+        print(f"   Skipped (no future data): {excluded['no_future_data']:,}")
 else:
     print("⚠️ Skipped prediction dataset (missing vitals/labs)")
 

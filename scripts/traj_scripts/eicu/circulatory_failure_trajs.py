@@ -153,7 +153,7 @@ def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window
         'stay_id': 'patientid',
         value_col: 'lab_value'
     })
-    traj_input = traj_input.dropna(subset=['lab_value']).sort_values(by=['patientid', 'time_days'])
+    traj_input = traj_input.dropna(subset=['lab_value']).sort_values(by=['patientid', 'time_hours'])
     if cohort_patients is not None:
         traj_input = traj_input[traj_input['patientid'].isin(cohort_patients)]
 
@@ -264,11 +264,44 @@ def main():
                         help='Lookback window in hours (default: 12.0)')
     parser.add_argument('--n-batches', type=int, default=8,
                         help='Number of batches for processing (default: 8)')
+    parser.add_argument('--cohort-splits', type=int, default=1,
+                        help='Total number of cohort splits (default: 1)')
+    parser.add_argument('--cohort-index', type=int, default=0,
+                        help='Which cohort split to process (0-indexed)')
 
     args = parser.parse_args()
 
+    if args.cohort_index < 0 or args.cohort_index >= args.cohort_splits:
+        print(f"ERROR: cohort-index must be between 0 and {args.cohort_splits - 1}")
+        sys.exit(1)
+
     data_dir = Path(args.data_dir)
     biomarker_results = {}
+
+    cohort_patients = None
+    if args.cohort_splits > 1:
+        if args.pred_dataset and Path(args.pred_dataset).exists():
+            prediction_dataset = pd.read_csv(args.pred_dataset)
+            all_patients = prediction_dataset['stay_id'].unique()
+        else:
+            first_biomarker = next(iter(BIOMARKERS.values()))
+            ts_path = data_dir / first_biomarker['file']
+            if ts_path.exists():
+                ts_df = pd.read_csv(ts_path, usecols=['stay_id'])
+                all_patients = ts_df['stay_id'].unique()
+            else:
+                all_patients = None
+
+        if all_patients is not None:
+            total_patients = len(all_patients)
+            cohort_size = total_patients // args.cohort_splits
+            start_idx = args.cohort_index * cohort_size
+            end_idx = total_patients if args.cohort_index == args.cohort_splits - 1 else start_idx + cohort_size
+            cohort_patients = all_patients[start_idx:end_idx]
+
+            print(f"\n📊 Sub-cohort {args.cohort_index + 1}/{args.cohort_splits}:")
+            print(f"   Processing patients {start_idx:,} to {end_idx:,} (of {total_patients:,} total)")
+            print(f"   Cohort size: {len(cohort_patients):,} patients")
 
     for biomarker, cfg in BIOMARKERS.items():
         traj_df = compute_biomarker_trajectories(
@@ -277,6 +310,7 @@ def main():
             data_dir=data_dir,
             window_hours=args.window_hours,
             n_batches=args.n_batches,
+            cohort_patients=cohort_patients,
         )
         if traj_df is not None:
             biomarker_results[biomarker] = traj_df
@@ -288,6 +322,8 @@ def main():
     if args.pred_dataset and Path(args.pred_dataset).exists():
         print(f"\nLoading prediction dataset: {args.pred_dataset}")
         prediction_dataset = pd.read_csv(args.pred_dataset)
+        if cohort_patients is not None:
+            prediction_dataset = prediction_dataset[prediction_dataset['stay_id'].isin(cohort_patients)]
         print(f"   Samples: {len(prediction_dataset):,}")
 
         merged = prediction_dataset.copy()
@@ -300,6 +336,8 @@ def main():
             print(f"   Rows with {biomarker} probs: {len(merged) - missing:,} / {len(merged):,}")
 
         merged_path = Path(args.merged_output) if args.merged_output else data_dir / "circulatory_failure_prediction_dataset_with_probs.csv"
+        if args.cohort_splits > 1:
+            merged_path = merged_path.parent / f"{merged_path.stem}_cohort{args.cohort_index:02d}{merged_path.suffix}"
         merged.to_csv(merged_path, index=False)
         print(f"\n✓ Saved merged prediction dataset: {merged_path}")
     else:

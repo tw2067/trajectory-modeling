@@ -162,7 +162,7 @@ def compute_biomarker(
         value_col: 'lab_value'
     })
 
-    traj_input = traj_input.dropna(subset=['lab_value']).sort_values(by=['patientid', 'time_days'])
+    traj_input = traj_input.dropna(subset=['lab_value']).sort_values(by=['patientid', 'time_hours'])
 
     if cohort_patients is not None:
         traj_input = traj_input[traj_input['patientid'].isin(cohort_patients)]

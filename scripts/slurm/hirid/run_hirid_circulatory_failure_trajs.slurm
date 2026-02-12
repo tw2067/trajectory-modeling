@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=hirid_circulatory_trajs
-#SBATCH --output=/home/gaga/tamarw1/trajectory-modeling/logs/outs/hirid_circulatory_%j.out
-#SBATCH --error=/home/gaga/tamarw1/trajectory-modeling/logs/errs/hirid_circulatory_%j.err
+#SBATCH --output=/home/gaga/tamarw1/trajectory-modeling/logs/outs/hirid_circulatory_%A_%a.out
+#SBATCH --error=/home/gaga/tamarw1/trajectory-modeling/logs/errs/hirid_circulatory_%A_%a.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=128G
@@ -9,6 +9,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --account=gpu-research
 #SBATCH --partition=gpu-shamir
+#SBATCH --array=0-9
 
 # HiRiD Circulatory Failure Trajectory Computation (multi-biomarker)
 
@@ -22,6 +23,10 @@ echo "Memory: 128G"
 echo "Start time: $(date)"
 echo ""
 
+# Cohort splitting
+COHORT_SPLITS=10
+COHORT_INDEX=${SLURM_ARRAY_TASK_ID}
+
 # Navigate to script directory
 cd /home/gaga/tamarw1/trajectory-modeling/scripts || exit 1
 
@@ -31,7 +36,9 @@ python traj_scripts/hirid/hirid_circulatory_failure_trajs.py \
     --output-dir ../results/hirid/circulatory_failure \
     --window-hours 12.0 \
     --n-batches 10 \
-    --sampler pymc
+    --sampler pymc \
+    --cohort-splits ${COHORT_SPLITS} \
+    --cohort-index ${COHORT_INDEX}
 
 echo ""
 echo "End time: $(date)"

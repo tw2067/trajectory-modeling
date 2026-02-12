@@ -153,7 +153,7 @@ VASOPRESSOR_IDS = [
 ]
 
 vaso_query = f"""
-SELECT r.patientid, r.datetime as charttime, p.admission_time as admittime
+SELECT r.patientid, r.givenat as charttime, p.admission_time as admittime
 FROM pharma_records r
 INNER JOIN patient_info p ON r.patientid = p.patientid
 WHERE r.pharmaid IN {tuple(VASOPRESSOR_IDS)}
@@ -218,16 +218,21 @@ for patientid, grp in obs_daily.groupby('patientid'):
         failure_events.append(row)
 
 prediction_dataset = pd.DataFrame(failure_events)
-positive_first = prediction_dataset[prediction_dataset['target_circulatory_failure'] == 1].groupby('patientid').first().reset_index()
-all_negatives = prediction_dataset[prediction_dataset['target_circulatory_failure'] == 0]
-prediction_dataset = pd.concat([all_negatives, positive_first], ignore_index=True).sort_values(['patientid', 'time_hour']).reset_index(drop=True)
+if prediction_dataset.empty:
+    prediction_dataset = pd.DataFrame(columns=list(obs_daily.columns) + ['target_circulatory_failure'])
+    prediction_dataset.to_csv(OUTPUT_DIR / "circulatory_failure_prediction_dataset.csv", index=False)
+    print("⚠️ No valid prediction windows; saved empty circulatory_failure_prediction_dataset.csv")
+else:
+    positive_first = prediction_dataset[prediction_dataset['target_circulatory_failure'] == 1].groupby('patientid').first().reset_index()
+    all_negatives = prediction_dataset[prediction_dataset['target_circulatory_failure'] == 0]
+    prediction_dataset = pd.concat([all_negatives, positive_first], ignore_index=True).sort_values(['patientid', 'time_hour']).reset_index(drop=True)
 
-prediction_dataset.to_csv(OUTPUT_DIR / "circulatory_failure_prediction_dataset.csv", index=False)
+    prediction_dataset.to_csv(OUTPUT_DIR / "circulatory_failure_prediction_dataset.csv", index=False)
 
-print(f"✓ Saved {len(prediction_dataset):,} rows")
-print(f"   Positive events: {prediction_dataset['target_circulatory_failure'].sum():,} ({100*prediction_dataset['target_circulatory_failure'].mean():.1f}%)")
-print(f"   Skipped (already failure): {excluded['already_failure']:,}")
-print(f"   Skipped (no future data): {excluded['no_future_data']:,}")
+    print(f"✓ Saved {len(prediction_dataset):,} rows")
+    print(f"   Positive events: {prediction_dataset['target_circulatory_failure'].sum():,} ({100*prediction_dataset['target_circulatory_failure'].mean():.1f}%)")
+    print(f"   Skipped (already failure): {excluded['already_failure']:,}")
+    print(f"   Skipped (no future data): {excluded['no_future_data']:,}")
 
 conn.close()
 print("\n✓ Circulatory failure preprocessing complete!")

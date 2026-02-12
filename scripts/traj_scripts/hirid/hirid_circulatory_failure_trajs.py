@@ -88,6 +88,20 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        '--cohort-splits',
+        type=int,
+        default=1,
+        help='Total number of cohort splits (default: 1)'
+    )
+
+    parser.add_argument(
+        '--cohort-index',
+        type=int,
+        default=0,
+        help='Which cohort split to process (0-indexed)'
+    )
+
+    parser.add_argument(
         '--sampler',
         type=str,
         choices=['pymc', 'numpyro', 'nutpie'],
@@ -148,8 +162,8 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
         nonlinear_gap=10.0,
         pids='patientid',
         values='lab_value',
-        time_col='time_days',
-        windowing_col='time_day',
+        time_col='time_hours',
+        windowing_col='time_hour',
         use_gpu=False,
         sampler=sampler,
         target_accept=0.995,
@@ -172,8 +186,8 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
         nonlinear_gap=8.0,
         pids='patientid',
         values='lab_value',
-        time_col='time_days',
-        windowing_col='time_day',
+        time_col='time_hours',
+        windowing_col='time_hour',
         use_gpu=False,
         sampler=sampler,
         target_accept=0.995,
@@ -230,7 +244,7 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
     }
 
 
-def _compute_biomarker_probs(spec: BiomarkerSpec, n_batches: int) -> pd.DataFrame:
+def _compute_biomarker_probs(spec: BiomarkerSpec, n_batches: int, cohort_patients: Optional[List[int]] = None) -> pd.DataFrame:
     if not spec.input_path.exists():
         raise FileNotFoundError(f"Input file not found: {spec.input_path}")
 
@@ -249,6 +263,8 @@ def _compute_biomarker_probs(spec: BiomarkerSpec, n_batches: int) -> pd.DataFram
     df = df.dropna(subset=[spec.value_alias])
     df = df.sort_values(by=['patientid', 'time_hours'])
     df = df.drop_duplicates(subset=['patientid', 'time_hour', spec.value_alias])
+    if cohort_patients is not None:
+        df = df[df['patientid'].isin(cohort_patients)]
 
     print(f"Patients: {df['patientid'].nunique():,}")
     print(f"Measurements: {len(df):,}")
@@ -295,8 +311,35 @@ def main():
     args = parse_args()
     specs = _make_configs(args)
 
+    if args.cohort_index < 0 or args.cohort_index >= args.cohort_splits:
+        print(f"ERROR: cohort-index must be between 0 and {args.cohort_splits - 1}")
+        sys.exit(1)
+
+    cohort_patients = None
+    if args.cohort_splits > 1:
+        cohort_source = None
+        for spec in specs.values():
+            if spec.input_path.exists():
+                cohort_source = spec.input_path
+                break
+
+        if cohort_source is not None:
+            cohort_df = pd.read_csv(cohort_source, usecols=['patientid'])
+            all_patients = pd.Series(cohort_df['patientid'].unique()).sort_values().to_numpy()
+            total_patients = len(all_patients)
+            cohort_size = total_patients // args.cohort_splits
+            start_idx = args.cohort_index * cohort_size
+            end_idx = total_patients if args.cohort_index == args.cohort_splits - 1 else start_idx + cohort_size
+            cohort_patients = all_patients[start_idx:end_idx].tolist()
+
+            print(f"\n📊 Sub-cohort {args.cohort_index + 1}/{args.cohort_splits}:")
+            print(f"   Processing patients {start_idx:,} to {end_idx:,} (of {total_patients:,} total)")
+            print(f"   Cohort size: {len(cohort_patients):,} patients")
+
     for spec in specs.values():
-        _compute_biomarker_probs(spec, args.n_batches)
+        if args.cohort_splits > 1:
+            spec.output_path = spec.output_path.parent / f"{spec.output_path.stem}_cohort{args.cohort_index:02d}{spec.output_path.suffix}"
+        _compute_biomarker_probs(spec, args.n_batches, cohort_patients)
 
 
 if __name__ == '__main__':
