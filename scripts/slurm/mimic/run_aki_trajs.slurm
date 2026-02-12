@@ -2,11 +2,11 @@
 #SBATCH --job-name=mimic_aki_trajs
 #SBATCH --output=/home/gaga/tamarw1/trajectory-modeling/logs/outs/mimic_aki_%A_%a.out
 #SBATCH --error=/home/gaga/tamarw1/trajectory-modeling/logs/errs/mimic_aki_%A_%a.err
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=128G
 #SBATCH --partition=cpu-killable
-#SBATCH --array=0-19
+#SBATCH --array=0-24
 
 
 # Navigate to project directory
@@ -17,7 +17,7 @@ source /home/gaga/tamarw1/anaconda3/etc/profile.d/conda.sh
 conda activate pymc_env
 
 # Cohort splitting
-COHORT_SPLITS=20
+COHORT_SPLITS=25
 COHORT_INDEX=${SLURM_ARRAY_TASK_ID}
 
 # Run AKI creatinine trajectories

@@ -66,6 +66,7 @@ def compute_time_varying_trajectory_covariates_parallel(
     flat_thr=-1.0, decline_thr=-2.0, nonlinear_gap=3.0,
     df_basis: int = 5, n_samples: int = 1000, tune: int = 1000,
     n_jobs: int = -1, min_points_per_window: int = 5, grid_freq: int = 12,
+    batch_size: int = 500,
     class_func=flags_from_traj, pids='patient_id', values='lab_value',
     time_col='time', traj_types=('prolonged_nonprogression','linear_decline','nonlinear'),
     label_map=None,
@@ -93,17 +94,44 @@ def compute_time_varying_trajectory_covariates_parallel(
             'nonlinear': 'nonlinear'
         }
 
-    windows = []
-    for pid, g in lab_df.groupby(pids):
-    
-        if windowing_col is None:
-            windowing_col = time_col
-        times = np.asarray(sorted(g[windowing_col].unique()))
+    windowing_col_effective = time_col if windowing_col is None else windowing_col
 
-        for t in times:
-            win = g[(g[windowing_col] >= t - window_years) & (g[windowing_col] <= t)]
-            if len(win) >= min_points_per_window:
-                windows.append((pid, t, win[[pids, time_col, values]].copy()))
+    def _process_batch(batch):
+        if not batch:
+            return []
+
+        if sampler in ("numpyro", "blackjax") and available_gpus and len(available_gpus) > 1:
+            nj_eff = min(len(available_gpus), len(batch))
+            print(f"[INFO] Using {nj_eff} GPUs in parallel: {available_gpus[:nj_eff]}")
+            gpu_rr = [available_gpus[i % len(available_gpus)] for i in range(len(batch))]
+            results = Parallel(n_jobs=nj_eff, backend="loky", verbose=verbose)(
+                delayed(_window_worker_gpu_pinned)(
+                    win_df, gpu_id,
+                    flat_thr, decline_thr, nonlinear_gap, df_basis, n_samples, tune,
+                    min_points_per_window, grid_freq, class_func, values, time_col, traj_types, label_map=label_map,
+                    sampler=sampler, chains=chains, cores=cores, progressbar=progressbar, chain_method=chain_method,
+                    target_accept=target_accept
+                )
+                for (_, _, win_df), gpu_id in zip(batch, gpu_rr)
+            )
+        else:
+            nj_eff = 1 if sampler in ("numpyro", "blackjax", "nutpie") else n_jobs
+            results = Parallel(n_jobs=nj_eff, backend="loky", verbose=verbose)(
+                delayed(_window_worker)(
+                    win_df, flat_thr, decline_thr, nonlinear_gap, df_basis, n_samples, tune,
+                    min_points_per_window, grid_freq, class_func, values, time_col, traj_types, label_map=label_map,
+                    sampler=sampler, chains=chains, cores=cores, progressbar=progressbar, chain_method=chain_method,
+                    target_accept=target_accept
+                )
+                for (_, _, win_df) in batch
+            )
+
+        out_rows = []
+        for (pid, t, _), probs in zip(batch, results):
+            rec = {pids: pid, windowing_col_effective: t}
+            rec.update(probs)
+            out_rows.append(rec)
+        return out_rows
 
     if available_gpus is None and sampler in ("numpyro", "blackjax"):
         cuda_visible = os.environ.get('CUDA_VISIBLE_DEVICES', '')
@@ -111,40 +139,22 @@ def compute_time_varying_trajectory_covariates_parallel(
             # Parse CUDA_VISIBLE_DEVICES (e.g., "0,1,2" -> [0, 1, 2])
             available_gpus = [int(x.strip()) for x in cuda_visible.split(',') if x.strip()]
             print(f"[INFO] Auto-detected GPUs: {available_gpus}")
-    
-    # Parallel strategy
-    if sampler in ("numpyro", "blackjax") and available_gpus and len(available_gpus) > 1:
-        nj_eff = min(len(available_gpus), len(windows))
-        print(f"[INFO] Using {nj_eff} GPUs in parallel: {available_gpus[:nj_eff]}")
-        gpu_rr = [available_gpus[i % len(available_gpus)] for i in range(len(windows))]
-        results = Parallel(n_jobs=nj_eff, backend="loky", verbose=verbose)(
-            delayed(_window_worker_gpu_pinned)(
-                win_df, gpu_id,
-                flat_thr, decline_thr, nonlinear_gap, df_basis, n_samples, tune,
-                min_points_per_window, grid_freq, class_func, values, time_col, traj_types, label_map=label_map,
-                sampler=sampler, chains=chains, cores=cores, progressbar=progressbar, chain_method=chain_method,
-                target_accept=target_accept
-            )
-            for (_, _, win_df), gpu_id in zip(windows, gpu_rr)
-        )
-    
-    else:
-        # Single GPU or CPU samplers: one worker only for JAX; else use n_jobs
-        nj_eff = 1 if sampler in ("numpyro", "blackjax", "nutpie") else n_jobs
-        results = Parallel(n_jobs=nj_eff, backend="loky", verbose=verbose)(
-            delayed(_window_worker)(
-                win_df, flat_thr, decline_thr, nonlinear_gap, df_basis, n_samples, tune,
-                min_points_per_window, grid_freq, class_func, values, time_col, traj_types, label_map=label_map,
-                sampler=sampler, chains=chains, cores=cores, progressbar=progressbar, chain_method=chain_method,
-                target_accept=target_accept
-            )
-            for (_, _, win_df) in windows
-        )
 
     rows = []
-    for (pid, t, _), probs in zip(windows, results):
-        rec = {pids: pid, windowing_col: t}
-        rec.update(probs)
-        rows.append(rec)
+    batch = []
+    for pid, g in lab_df.groupby(pids):
+        times = np.asarray(sorted(g[windowing_col_effective].unique()))
+        for t in times:
+            win = g[(g[windowing_col_effective] >= t - window_years) & (g[windowing_col_effective] <= t)]
+            if len(win) >= min_points_per_window:
+                batch.append((pid, t, win[[pids, time_col, values]].copy()))
+
+            if len(batch) >= batch_size:
+                rows.extend(_process_batch(batch))
+                batch = []
+
+    if batch:
+        rows.extend(_process_batch(batch))
+
     return pd.DataFrame(rows)
 
