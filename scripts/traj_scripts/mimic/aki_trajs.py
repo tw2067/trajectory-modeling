@@ -109,8 +109,8 @@ def main():
                         help='Increase threshold in mg/dL/day (default: 0.3)')
     parser.add_argument('--nonlinear-gap', type=float, default=0.5,
                         help='Nonlinear gap threshold (default: 0.5)')
-    parser.add_argument('--n-batches', type=int, default=20,
-                        help='Number of batches for processing (default: 20)')
+    parser.add_argument('--n-batches', type=int, default=25,
+                        help='Number of batches for processing (default: 25)')
     parser.add_argument('--cohort-splits', type=int, default=1,
                         help='Total number of cohort splits (default: 1)')
     parser.add_argument('--cohort-index', type=int, default=0,
@@ -214,8 +214,12 @@ def main():
 
         print(f"\n   Batch {i+1}/{n_batches} ({len(subset_patients)} patients)...")
 
-        batch_probs = traj_model.embed(traj_input[traj_input['patientid'].isin(subset_patients)])
+        batch_input = traj_input[traj_input['patientid'].isin(subset_patients)]
+        batch_probs = traj_model.embed(batch_input)
         trajectory_probs_list.append(batch_probs)
+
+        del batch_input
+        del batch_probs
 
         gc.collect()
         if PYTENSOR_CACHE.exists():
@@ -228,6 +232,8 @@ def main():
                 print(f"   Warning: Could not clean cache: {e}")
 
     trajectory_probs = pd.concat(trajectory_probs_list, ignore_index=True)
+    del trajectory_probs_list
+    gc.collect()
 
     print(f"\n✓ Trajectory probabilities computed!")
 
@@ -245,6 +251,8 @@ def main():
         on=['hadm_id', 'time_day'],
         how='left'
     )
+    del creatinine_ts
+    gc.collect()
 
     output_path = Path(args.output)
     if args.cohort_splits > 1:
