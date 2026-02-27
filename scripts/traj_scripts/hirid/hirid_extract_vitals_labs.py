@@ -18,7 +18,7 @@ db_path = '/home/gaga/data/physionet/HiRiD/hirid.duckdb'
 conn = duckdb.connect(db_path, read_only=True)
 
 # Load patient cohort
-patient_final = pd.read_csv('../../results/hirid/aki/patient_cohort.csv')
+patient_final = pd.read_csv('/home/gaga/data/physionet/hirid/aki/patient_cohort.csv')
 patient_ids = patient_final['patientid'].tolist()
 
 print(f"\n📊 Cohort: {len(patient_ids):,} patients")
@@ -162,14 +162,14 @@ for var_name, count in labs_df['feature name'].value_counts().head(10).items():
 # SAVE
 # ============================================================================
 
-os.makedirs('../../results/hirid/aki', exist_ok=True)
+os.makedirs('/home/gaga/data/physionet/hirid/aki', exist_ok=True)
 
-vitals_df.to_csv('../../results/hirid/aki/vitals_raw.csv', index=False)
-labs_df.to_csv('../../results/hirid/aki/labs_raw.csv', index=False)
+vitals_df.to_csv('/home/gaga/data/physionet/hirid/aki/vitals_raw.csv', index=False)
+labs_df.to_csv('/home/gaga/data/physionet/hirid/aki/labs_raw.csv', index=False)
 
 print(f"\n💾 Saved:")
-print(f"   ../../results/hirid/aki/vitals_raw.csv")
-print(f"   ../../results/hirid/aki/labs_raw.csv")
+print(f"   /home/gaga/data/physionet/hirid/aki/vitals_raw.csv")
+print(f"   /home/gaga/data/physionet/hirid/aki/labs_raw.csv")
 
 # Create metadata files for compatibility with shared utilities
 vital_meta = pd.DataFrame([

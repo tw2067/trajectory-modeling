@@ -10,7 +10,7 @@ python3 << 'EOF'
 import pandas as pd
 from pathlib import Path
 
-result_dir = Path("results/eicu/liver")
+result_dir = Path("/home/gaga/data/physionet/eicu/liver")
 
 def merge_cohorts(pattern: str, output_name: str, id_col: str):
     cohort_files = sorted(result_dir.glob(pattern))

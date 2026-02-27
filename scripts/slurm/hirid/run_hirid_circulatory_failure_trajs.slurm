@@ -32,8 +32,8 @@ cd /home/gaga/tamarw1/trajectory-modeling/scripts || exit 1
 
 # Run trajectory computation for all three biomarkers
 python traj_scripts/hirid/hirid_circulatory_failure_trajs.py \
-    --input-dir ../results/hirid/circulatory_failure \
-    --output-dir ../results/hirid/circulatory_failure \
+    --input-dir /home/gaga/data/physionet/hirid/circulatory_failure \
+    --output-dir /home/gaga/data/physionet/hirid/circulatory_failure \
     --window-hours 12.0 \
     --n-batches 10 \
     --sampler pymc \

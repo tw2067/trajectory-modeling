@@ -62,14 +62,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--input-dir',
         type=str,
-        default='../results/hirid/circulatory_failure',
+        default='/home/gaga/data/physionet/hirid/circulatory_failure',
         help='Directory containing lactate_timeseries.csv, heartrate_timeseries.csv, systolic_timeseries.csv'
     )
 
     parser.add_argument(
         '--output-dir',
         type=str,
-        default='../results/hirid/circulatory_failure',
+        default='/home/gaga/data/physionet/hirid/circulatory_failure',
         help='Directory to write trajectory probability CSVs'
     )
 

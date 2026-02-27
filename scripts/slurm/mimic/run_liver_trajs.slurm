@@ -26,10 +26,10 @@ echo "Starting MIMIC LIVER TRAJS run at $(date)"
 echo ""
 
 python /home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/mimic/liver_trajs.py \
-	--input /home/gaga/tamarw1/trajectory-modeling/results/mimic/liver/bilirubin_timeseries.csv \
-	--pred-dataset /home/gaga/tamarw1/trajectory-modeling/results/mimic/liver/liver_prediction_dataset.csv \
-	--output /home/gaga/tamarw1/trajectory-modeling/results/mimic/liver/bili_trajectory_probs_bayes.csv \
-	--merged-output /home/gaga/tamarw1/trajectory-modeling/results/mimic/liver/liver_prediction_dataset_with_probs.csv \
+	--input /home/gaga/data/physionet/mimic/liver/bilirubin_timeseries.csv \
+	--pred-dataset /home/gaga/data/physionet/mimic/liver/liver_prediction_dataset.csv \
+	--output /home/gaga/data/physionet/mimic/liver/bili_trajectory_probs_bayes.csv \
+	--merged-output /home/gaga/data/physionet/mimic/liver/liver_prediction_dataset_with_probs.csv \
 	--cohort-splits ${COHORT_SPLITS} \
 	--cohort-index ${COHORT_INDEX}
 

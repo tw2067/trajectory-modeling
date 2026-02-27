@@ -27,8 +27,8 @@ cd /home/gaga/tamarw1/trajectory-modeling/scripts || exit 1
 
 # Run trajectory computation
 python hirid_ventilator_trajs.py \
-    --input ../results/hirid/ventilator/pf_ratio_timeseries.csv \
-    --output ../results/hirid/ventilator/ventilator_trajectory_probs_bayes.csv \
+    --input /home/gaga/data/physionet/hirid/ventilator/pf_ratio_timeseries.csv \
+    --output /home/gaga/data/physionet/hirid/ventilator/ventilator_trajectory_probs_bayes.csv \
     --window-days 3.0 \
     --flat-thr 10.0 \
     --decline-thr 30.0 \

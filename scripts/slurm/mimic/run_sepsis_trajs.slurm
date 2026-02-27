@@ -27,9 +27,9 @@ echo ""
 
 python /home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/mimic/sepsis_trajs.py \
 		--biomarker all \
-		--data-dir /home/gaga/tamarw1/trajectory-modeling/results/mimic/sepsis \
-		--pred-dataset /home/gaga/tamarw1/trajectory-modeling/results/mimic/sepsis/sepsis_prediction_dataset.csv \
-		--merged-output /home/gaga/tamarw1/trajectory-modeling/results/mimic/sepsis/sepsis_prediction_dataset_with_probs.csv \
+		--data-dir /home/gaga/data/physionet/mimic/sepsis \
+		--pred-dataset /home/gaga/data/physionet/mimic/sepsis/sepsis_prediction_dataset.csv \
+		--merged-output /home/gaga/data/physionet/mimic/sepsis/sepsis_prediction_dataset_with_probs.csv \
 		--cohort-splits ${COHORT_SPLITS} \
 		--cohort-index ${COHORT_INDEX}
 

@@ -28,8 +28,8 @@ cd /home/gaga/tamarw1/trajectory-modeling/scripts || exit 1
 
 # Run trajectory computation
 python hirid_liver_trajs.py \
-    --input ../results/hirid/liver/bilirubin_timeseries.csv \
-    --output ../results/hirid/liver/liver_trajectory_probs_bayes.csv \
+    --input /home/gaga/data/physionet/hirid/liver/bilirubin_timeseries.csv \
+    --output /home/gaga/data/physionet/hirid/liver/liver_trajectory_probs_bayes.csv \
     --window-days 5.0 \
     --flat-thr 10.0 \
     --increase-thr 20.0 \

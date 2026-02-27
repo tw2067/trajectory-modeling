@@ -273,13 +273,13 @@ def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window
 def main():
     parser = argparse.ArgumentParser(description='Compute eICU sepsis trajectory probabilities for all biomarkers')
     parser.add_argument('--data-dir', type=str,
-                       default='results/eicu/sepsis',
+                       default='/home/gaga/data/physionet/eicu/sepsis',
                        help='Directory containing time series CSVs')
     parser.add_argument('--pred-dataset', type=str,
-                       default='results/eicu/sepsis/sepsis_prediction_dataset.csv',
+                       default='/home/gaga/data/physionet/eicu/sepsis/sepsis_prediction_dataset.csv',
                        help='Path to prediction dataset for merging')
     parser.add_argument('--output', type=str,
-                       default='results/eicu/sepsis/sepsis_trajectory_probs.csv',
+                       default='/home/gaga/data/physionet/eicu/sepsis/sepsis_trajectory_probs.csv',
                        help='Path to save merged prediction dataset with probabilities')
     parser.add_argument('--merged-output', type=str,
                        default=None,

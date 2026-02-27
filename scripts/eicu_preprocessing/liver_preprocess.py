@@ -32,7 +32,7 @@ PREDICTION_GAP_DAYS = 1.0      # Don't predict events within 1 day
 PREDICTION_WINDOW_DAYS = 5.0   # Predict ACLF within 5 days after gap
 LOOKBACK_DAYS = 7.0            # Use 7 days of historical data for features
 MIN_BILI_MEASUREMENTS = 3      # Minimum bilirubin measurements required
-OUTPUT_PATH = 'results/eicu/liver/liver_prediction_dataset.csv'
+OUTPUT_PATH = '/home/gaga/data/physionet/eicu/liver/liver_prediction_dataset.csv'
 
 MAX_PATIENTS = None            # No limit for liver cohort (only ~1,146 patients)
 
@@ -328,7 +328,7 @@ final_stay_ids = prediction_dataset['stay_id'].unique()
 bilirubin_ts_filtered = bilirubin_ts[bilirubin_ts['stay_id'].isin(final_stay_ids)].copy()
 # Add time_day column (integer day for windowing in trajectory computation)
 bilirubin_ts_filtered['time_day'] = bilirubin_ts_filtered['time_days'].astype(int)
-bilirubin_ts_output = 'results/eicu/liver/bilirubin_timeseries.csv'
+bilirubin_ts_output = '/home/gaga/data/physionet/eicu/liver/bilirubin_timeseries.csv'
 os.makedirs(os.path.dirname(bilirubin_ts_output), exist_ok=True)
 bilirubin_ts_filtered.to_csv(bilirubin_ts_output, index=False)
 print(f"  ✓ Saved raw time series: {len(bilirubin_ts_filtered):,} measurements for {len(final_stay_ids):,} patients")

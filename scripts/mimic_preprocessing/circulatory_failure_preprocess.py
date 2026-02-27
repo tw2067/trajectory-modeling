@@ -31,7 +31,7 @@ from common import (
     aggregate_vitals_labs,
 )
 
-OUTPUT_DIR = Path("results/mimic/circulatory_failure")
+OUTPUT_DIR = Path("/home/gaga/data/physionet/mimic/circulatory_failure")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Outcome configuration (Nature Medicine 2020): predict CF within next 8h
@@ -196,7 +196,8 @@ if len(vitals_df) > 0 and len(labs_df) > 0:
 
     missing_pct = hadm_final.isnull().mean()
     cols_to_drop = missing_pct[missing_pct > 0.2].index.tolist()
-    for col in ["hadm_id", "time_hour", "hospital_expire_flag", "age", "gender"]:
+    required_cols = ["lactate_mean", "meanbp_mean"]
+    for col in ["hadm_id", "time_hour", "hospital_expire_flag", "age", "gender"] + required_cols:
         if col in cols_to_drop:
             cols_to_drop.remove(col)
     hadm_final = hadm_final.drop(columns=cols_to_drop)
@@ -224,26 +225,39 @@ if len(vitals_df) > 0 and len(labs_df) > 0:
     vasopressor_df.columns = vasopressor_df.columns.str.lower()
     print(f"✓ Detected vasopressors in {len(vasopressor_df):,} admissions")
 
+    # Prepare lactate time series for outcome lookup (from raw lactate_df, not pivoted)
+    lactate_lookup = lactate_df[["hadm_id", "time_hours", "lactate"]].copy()
+    lactate_lookup["time_hour"] = np.floor(lactate_lookup["time_hours"]).astype(int)
+    # Hourly lactate aggregation for outcome detection
+    lactate_hourly = lactate_lookup.groupby(["hadm_id", "time_hour"])["lactate"].mean().reset_index()
+
     failure_events = []
     excluded = {"already_failure": 0, "no_future_data": 0, "ambiguous": 0}
 
     for hadm_id, grp in hadm_final.groupby("hadm_id"):
         grp = grp.sort_values("time_hour")
+        patient_lactate = lactate_hourly[lactate_hourly["hadm_id"] == hadm_id]
+        
         for i in range(len(grp)):
             current_time = grp.iloc[i]["time_hour"]
             current_bp = grp.iloc[i].get("meanbp_mean", np.nan)
-            current_lactate = grp.iloc[i].get("lactate_mean", np.nan)
+            
+            # Get current lactate from hourly aggregation (may be NA if not measured this hour)
+            current_lactate_row = patient_lactate[patient_lactate["time_hour"] == current_time]
+            current_lactate = current_lactate_row["lactate"].iloc[0] if len(current_lactate_row) > 0 else np.nan
 
             current_vasopressor = False
             if hadm_id in vasopressor_df["hadm_id"].values:
                 vaso_start = vasopressor_df[vasopressor_df["hadm_id"] == hadm_id]["vaso_start_hour"].iloc[0]
                 current_vasopressor = vaso_start <= current_time
 
-            if pd.isna(current_bp) or pd.isna(current_lactate):
+            # Need MAP for prediction; lactate can be missing at current time
+            if pd.isna(current_bp):
                 excluded["ambiguous"] += 1
                 continue
 
-            if current_lactate >= LACTATE_THRESHOLD and (current_bp <= MAP_THRESHOLD or current_vasopressor):
+            # Skip if already in circulatory failure (lactate high AND (hypotension OR vasopressor))
+            if not pd.isna(current_lactate) and current_lactate >= LACTATE_THRESHOLD and (current_bp <= MAP_THRESHOLD or current_vasopressor):
                 excluded["already_failure"] += 1
                 continue
 
@@ -255,19 +269,26 @@ if len(vitals_df) > 0 and len(labs_df) > 0:
                 excluded["no_future_data"] += 1
                 continue
 
-            if "meanbp_mean" not in future_grp.columns or "lactate_mean" not in future_grp.columns:
-                excluded["ambiguous"] += 1
-                continue
+            # Check future hypotension from vitals
+            future_hypotension = False
+            if "meanbp_mean" in future_grp.columns:
+                future_hypotension = (future_grp["meanbp_mean"].dropna() <= MAP_THRESHOLD).any()
 
-            future_hypotension = (future_grp["meanbp_mean"] <= MAP_THRESHOLD).any()
-            future_lactate = (future_grp["lactate_mean"] >= LACTATE_THRESHOLD).any()
+            # Check future lactate from raw time series
+            future_lactate_df = patient_lactate[
+                (patient_lactate["time_hour"] >= prediction_start) & 
+                (patient_lactate["time_hour"] <= prediction_end)
+            ]
+            future_lactate = (future_lactate_df["lactate"] >= LACTATE_THRESHOLD).any() if len(future_lactate_df) > 0 else False
 
             vasopressor_in_window = False
             if hadm_id in vasopressor_df["hadm_id"].values:
                 vaso_start = vasopressor_df[vasopressor_df["hadm_id"] == hadm_id]["vaso_start_hour"].iloc[0]
                 vasopressor_in_window = prediction_start <= vaso_start <= prediction_end
 
-            target = int(future_lactate and (future_hypotension or vasopressor_in_window))
+            # Circulatory failure: (hypotension OR vasopressor) AND (high lactate OR no lactate data)
+            # More permissive: if no lactate data in window, count hypotension/vasopressor alone
+            target = int((future_hypotension or vasopressor_in_window) and (future_lactate or len(future_lactate_df) == 0))
 
             row = grp.iloc[i].to_dict()
             row["target_circulatory_failure"] = target

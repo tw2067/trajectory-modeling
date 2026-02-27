@@ -27,10 +27,10 @@ echo "Cohort: 795 patients, 4,978 samples"
 echo ""
 
 python /home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/eicu/liver_trajs.py \
-    --input /home/gaga/tamarw1/trajectory-modeling/results/eicu/liver/bilirubin_timeseries.csv \
-    --pred-dataset /home/gaga/tamarw1/trajectory-modeling/results/eicu/liver/liver_prediction_dataset.csv \
-    --output /home/gaga/tamarw1/trajectory-modeling/results/eicu/liver/liver_trajectory_probs.csv \
-    --probs-output /home/gaga/tamarw1/trajectory-modeling/results/eicu/liver/liver_trajectory_probs_bayes.csv \
+    --input /home/gaga/data/physionet/eicu/liver/bilirubin_timeseries.csv \
+    --pred-dataset /home/gaga/data/physionet/eicu/liver/liver_prediction_dataset.csv \
+    --output /home/gaga/data/physionet/eicu/liver/liver_trajectory_probs.csv \
+    --probs-output /home/gaga/data/physionet/eicu/liver/liver_trajectory_probs_bayes.csv \
     --window-days 5.0 \
     --flat-thr 0.5 \
     --decline-thr 1.0 \

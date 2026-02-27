@@ -88,13 +88,13 @@ def precompile_pytensor_functions(config):
 def main():
     parser = argparse.ArgumentParser(description='Compute MIMIC liver trajectory probabilities')
     parser.add_argument('--input', type=str,
-                        default='results/mimic/liver/bilirubin_timeseries.csv',
+                        default='/home/gaga/data/physionet/mimic/liver/bilirubin_timeseries.csv',
                         help='Path to raw bilirubin time series CSV')
     parser.add_argument('--pred-dataset', type=str,
-                        default='results/mimic/liver/liver_prediction_dataset.csv',
+                        default='/home/gaga/data/physionet/mimic/liver/liver_prediction_dataset.csv',
                         help='Path to prediction dataset for merging')
     parser.add_argument('--output', type=str,
-                        default='results/mimic/liver/bili_trajectory_probs_bayes.csv',
+                        default='/home/gaga/data/physionet/mimic/liver/bili_trajectory_probs_bayes.csv',
                         help='Path to save trajectory probabilities (time series + probs)')
     parser.add_argument('--merged-output', type=str,
                         default=None,

@@ -255,13 +255,13 @@ def main():
     parser.add_argument('--biomarker', type=str, choices=list(BIOMARKER_CONFIG.keys()) + ['all'], default='lactate',
                         help='Biomarker to model (lactate, heartrate, systolic) or all')
     parser.add_argument('--input', type=str,
-                        default='results/mimic/circulatory_failure/lactate_timeseries.csv',
+                        default='/home/gaga/data/physionet/mimic/circulatory_failure/lactate_timeseries.csv',
                         help='Path to raw biomarker time series CSV (single-biomarker mode)')
     parser.add_argument('--data-dir', type=str,
-                        default='results/mimic/circulatory_failure',
+                        default='/home/gaga/data/physionet/mimic/circulatory_failure',
                         help='Directory containing biomarker time series CSVs (all-biomarker mode)')
     parser.add_argument('--pred-dataset', type=str,
-                        default='results/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv',
+                        default='/home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv',
                         help='Path to prediction dataset for merging')
     parser.add_argument('--output', type=str, default=None,
                         help='Path to save trajectory probabilities (single-biomarker mode)')
@@ -371,7 +371,7 @@ def main():
         return
 
     bm = args.biomarker
-    output_path = Path(args.output) if args.output else Path(f"results/mimic/circulatory_failure/{bm}_trajectory_probs_bayes.csv")
+    output_path = Path(args.output) if args.output else Path(f"/home/gaga/data/physionet/mimic/circulatory_failure/{bm}_trajectory_probs_bayes.csv")
     input_path = Path(args.input)
 
     cohort_patients = None

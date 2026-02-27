@@ -32,7 +32,7 @@ PREDICTION_GAP_DAYS = 0.5      # Don't predict events within 12h
 PREDICTION_WINDOW_DAYS = 2.0   # Predict weaning success within 2 days after gap
 LOOKBACK_DAYS = 7.0            # Use 7 days of historical data for features
 MIN_PF_MEASUREMENTS = 3        # Minimum P/F ratio measurements required
-OUTPUT_PATH = 'results/eicu/ventilator/ventilator_prediction_dataset.csv'
+OUTPUT_PATH = '/home/gaga/data/physionet/eicu/ventilator/ventilator_prediction_dataset.csv'
 
 MAX_PATIENTS = None            # Process full cohort
 
@@ -397,7 +397,7 @@ final_stay_ids = prediction_dataset['stay_id'].unique()
 pf_ts_filtered = pf_ts[pf_ts['stay_id'].isin(final_stay_ids)].copy()
 # Add time_day column (integer day for windowing in trajectory computation)
 pf_ts_filtered['time_day'] = pf_ts_filtered['time_days'].astype(int)
-pf_ts_output = 'results/eicu/ventilator/pf_ratio_timeseries.csv'
+pf_ts_output = '/home/gaga/data/physionet/eicu/ventilator/pf_ratio_timeseries.csv'
 os.makedirs(os.path.dirname(pf_ts_output), exist_ok=True)
 pf_ts_filtered.to_csv(pf_ts_output, index=False)
 print(f"  ✓ Saved raw time series: {len(pf_ts_filtered):,} measurements for {len(final_stay_ids):,} patients")

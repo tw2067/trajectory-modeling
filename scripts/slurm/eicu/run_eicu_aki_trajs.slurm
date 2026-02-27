@@ -27,9 +27,9 @@ echo "Cohort: 4,062 patients, 37,766 samples"
 echo ""
 
 python /home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/eicu/aki_trajs.py \
-    --input /home/gaga/tamarw1/trajectory-modeling/results/eicu/aki/creatinine_timeseries.csv \
-    --pred-dataset /home/gaga/tamarw1/trajectory-modeling/results/eicu/aki/aki_prediction_dataset.csv \
-    --output /home/gaga/tamarw1/trajectory-modeling/results/eicu/aki/aki_trajectory_probs.csv \
+    --input /home/gaga/data/physionet/eicu/aki/creatinine_timeseries.csv \
+    --pred-dataset /home/gaga/data/physionet/eicu/aki/aki_prediction_dataset.csv \
+    --output /home/gaga/data/physionet/eicu/aki/aki_trajectory_probs.csv \
     --probs-output /home/gaga/tamarw1/trajectory-modeling/results/eicu/aki/aki_trajectory_probs_bayes.csv \
     --window-days 7.0 \
     --flat-thr 0.1 \

@@ -89,16 +89,16 @@ def precompile_pytensor_functions(config):
 def main():
     parser = argparse.ArgumentParser(description='Compute eICU AKI trajectory probabilities')
     parser.add_argument('--input', type=str, 
-                       default='results/eicu/aki/creatinine_timeseries.csv',
+                       default='/home/gaga/data/physionet/eicu/aki/creatinine_timeseries.csv',
                        help='Path to raw creatinine time series CSV')
     parser.add_argument('--pred-dataset', type=str,
-                       default='results/eicu/aki/aki_prediction_dataset.csv',
+                       default='/home/gaga/data/physionet/eicu/aki/aki_prediction_dataset.csv',
                        help='Path to prediction dataset for merging')
     parser.add_argument('--output', type=str,
-                       default='results/eicu/aki/aki_trajectory_probs.csv',
+                       default='/home/gaga/data/physionet/eicu/aki/aki_trajectory_probs.csv',
                        help='Path to save prediction dataset merged with probabilities')
     parser.add_argument('--probs-output', type=str,
-                       default='results/eicu/aki/aki_trajectory_probs_bayes.csv',
+                       default='/home/gaga/data/physionet/eicu/aki/aki_trajectory_probs_bayes.csv',
                        help='Path to save time series with trajectory probabilities')
     parser.add_argument('--merged-output', type=str,
                        default=None,
@@ -332,7 +332,7 @@ def main():
     print(f"\n✓ Saved: {output_path}")
     if args.cohort_splits > 1:
         print(f"\n💡 To merge all cohorts, run:")
-        print(f"   python -c \"import pandas as pd; pd.concat([pd.read_csv('results/eicu/aki/aki_trajectory_probs_cohort{i:02d}.csv') for i in range({args.cohort_splits})]).to_csv('results/eicu/aki/aki_trajectory_probs.csv', index=False)\"")
+        print(f"   python -c \"import pandas as pd; pd.concat([pd.read_csv('/home/gaga/data/physionet/eicu/aki/aki_trajectory_probs_cohort{i:02d}.csv') for i in range({args.cohort_splits})]).to_csv('/home/gaga/data/physionet/eicu/aki/aki_trajectory_probs.csv', index=False)\"")
     print("="*80)
 
 if __name__ == '__main__':

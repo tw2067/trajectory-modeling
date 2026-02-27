@@ -27,10 +27,10 @@ echo "Cohort: 2,827 patients, 11,206 samples"
 echo ""
 
 python /home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/eicu/ventilator_trajs.py \
-    --input /home/gaga/tamarw1/trajectory-modeling/results/eicu/ventilator/pf_ratio_timeseries.csv \
-    --pred-dataset /home/gaga/tamarw1/trajectory-modeling/results/eicu/ventilator/ventilator_prediction_dataset.csv \
-    --output /home/gaga/tamarw1/trajectory-modeling/results/eicu/ventilator/ventilator_trajectory_probs.csv \
-    --probs-output /home/gaga/tamarw1/trajectory-modeling/results/eicu/ventilator/ventilator_trajectory_probs_bayes.csv \
+    --input /home/gaga/data/physionet/eicu/ventilator/pf_ratio_timeseries.csv \
+    --pred-dataset /home/gaga/data/physionet/eicu/ventilator/ventilator_prediction_dataset.csv \
+    --output /home/gaga/data/physionet/eicu/ventilator/ventilator_trajectory_probs.csv \
+    --probs-output /home/gaga/data/physionet/eicu/ventilator/ventilator_trajectory_probs_bayes.csv \
     --window-days 3.0 \
     --flat-thr 10.0 \
     --decline-thr 30.0 \

@@ -254,9 +254,9 @@ def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window
 
 def main():
     parser = argparse.ArgumentParser(description='Compute eICU circulatory failure trajectory probabilities')
-    parser.add_argument('--data-dir', type=str, default='results/eicu/circulatory_failure',
+    parser.add_argument('--data-dir', type=str, default='/home/gaga/data/physionet/eicu/circulatory_failure',
                         help='Directory containing biomarker time series CSVs')
-    parser.add_argument('--pred-dataset', type=str, default='results/eicu/circulatory_failure/circulatory_failure_prediction_dataset.csv',
+    parser.add_argument('--pred-dataset', type=str, default='/home/gaga/data/physionet/eicu/circulatory_failure/circulatory_failure_prediction_dataset.csv',
                         help='Path to prediction dataset for merging')
     parser.add_argument('--merged-output', type=str, default=None,
                         help='Optional path to save prediction dataset merged with probabilities')

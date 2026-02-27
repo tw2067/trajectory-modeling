@@ -47,10 +47,10 @@ class BiomarkerSpec:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description='Compute HiRiD liver trajectory probabilities (bilirubin)')
     parser.add_argument('--input', type=str,
-                        default='../results/hirid/liver/bilirubin_timeseries.csv',
+                        default='/home/gaga/data/physionet/hirid/liver/bilirubin_timeseries.csv',
                         help='Path to bilirubin time series CSV file')
     parser.add_argument('--output', type=str,
-                        default='../results/hirid/liver/liver_trajectory_probs_bayes.csv',
+                        default='/home/gaga/data/physionet/hirid/liver/liver_trajectory_probs_bayes.csv',
                         help='Path to save trajectory probabilities')
     parser.add_argument('--window-days', type=float, default=5.0,
                         help='Lookback window in days (default: 5.0)')

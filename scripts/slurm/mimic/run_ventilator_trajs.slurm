@@ -25,10 +25,10 @@ echo "Starting MIMIC VENTILATOR TRAJS run at $(date)"
 echo ""
 
 python /home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/mimic/ventilator_trajs.py \
-	--input /home/gaga/tamarw1/trajectory-modeling/results/mimic/ventilator/pf_ratio_timeseries.csv \
-	--pred-dataset /home/gaga/tamarw1/trajectory-modeling/results/mimic/ventilator/ventilator_prediction_dataset.csv \
-	--output /home/gaga/tamarw1/trajectory-modeling/results/mimic/ventilator/pf_trajectory_probs_bayes.csv \
-	--merged-output /home/gaga/tamarw1/trajectory-modeling/results/mimic/ventilator/ventilator_prediction_dataset_with_probs.csv \
+	--input /home/gaga/data/physionet/mimic/ventilator/pf_ratio_timeseries.csv \
+	--pred-dataset /home/gaga/data/physionet/mimic/ventilator/ventilator_prediction_dataset.csv \
+	--output /home/gaga/data/physionet/mimic/ventilator/pf_trajectory_probs_bayes.csv \
+	--merged-output /home/gaga/data/physionet/mimic/ventilator/ventilator_prediction_dataset_with_probs.csv \
 	--cohort-splits ${COHORT_SPLITS} \
 	--cohort-index ${COHORT_INDEX}
 

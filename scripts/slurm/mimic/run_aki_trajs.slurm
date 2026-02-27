@@ -25,10 +25,10 @@ echo "Starting MIMIC AKI TRAJS run at $(date)"
 echo ""
 
 python /home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/mimic/aki_trajs.py \
-	--input /home/gaga/tamarw1/trajectory-modeling/results/mimic/aki/creatinine_timeseries.csv \
-	--pred-dataset /home/gaga/tamarw1/trajectory-modeling/results/mimic/aki/aki_prediction_dataset.csv \
-	--output /home/gaga/tamarw1/trajectory-modeling/results/mimic/aki/aki_trajectory_probs_bayes.csv \
-	--merged-output /home/gaga/tamarw1/trajectory-modeling/results/mimic/aki/aki_prediction_dataset_with_probs.csv \
+	--input /home/gaga/data/physionet/mimic/aki/creatinine_timeseries.csv \
+	--pred-dataset /home/gaga/data/physionet/mimic/aki/aki_prediction_dataset.csv \
+	--output /home/gaga/data/physionet/mimic/aki/aki_trajectory_probs_bayes.csv \
+	--merged-output /home/gaga/data/physionet/mimic/aki/aki_prediction_dataset_with_probs.csv \
 	--cohort-splits ${COHORT_SPLITS} \
 	--cohort-index ${COHORT_INDEX}
 

@@ -19,8 +19,8 @@ echo "Starting HiRiD AKI TRAJS run at $(date)"
 echo ""
 
 python /home/gaga/tamarw1/trajectory-modeling/scripts/hirid_aki_trajs.py \
-    --input /home/gaga/tamarw1/trajectory-modeling/results/hirid/aki/creatinine_timeseries.csv \
-    --output /home/gaga/tamarw1/trajectory-modeling/results/hirid/aki/aki_trajectory_probs_bayes.csv \
+    --input /home/gaga/data/physionet/hirid/aki/creatinine_timeseries.csv \
+    --output /home/gaga/data/physionet/hirid/aki/aki_trajectory_probs_bayes.csv \
     --window-days 7.0 \
     --flat-thr 0.1 \
     --decline-thr 0.3 \

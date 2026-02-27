@@ -28,9 +28,9 @@ echo ""
 
 python /home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/mimic/circulatory_failure_trajs.py \
 		--biomarker all \
-		--data-dir /home/gaga/tamarw1/trajectory-modeling/results/mimic/circulatory_failure \
-		--pred-dataset /home/gaga/tamarw1/trajectory-modeling/results/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv \
-		--merged-output /home/gaga/tamarw1/trajectory-modeling/results/mimic/circulatory_failure/circulatory_failure_prediction_dataset_with_probs.csv \
+		--data-dir /home/gaga/data/physionet/mimic/circulatory_failure \
+		--pred-dataset /home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv \
+		--merged-output /home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset_with_probs.csv \
 		--window-hours 12.0 \
 		--cohort-splits ${COHORT_SPLITS} \
 		--cohort-index ${COHORT_INDEX}

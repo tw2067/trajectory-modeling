@@ -28,9 +28,9 @@ echo ""
 
 # Run unified trajectory computation
 python /home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/eicu/sepsis_all_biomarkers.py \
-    --data-dir /home/gaga/tamarw1/trajectory-modeling/results/eicu/sepsis \
-    --pred-dataset /home/gaga/tamarw1/trajectory-modeling/results/eicu/sepsis/sepsis_prediction_dataset.csv \
-    --output /home/gaga/tamarw1/trajectory-modeling/results/eicu/sepsis/sepsis_trajectory_probs.csv \
+    --data-dir /home/gaga/data/physionet/eicu/sepsis \
+    --pred-dataset /home/gaga/data/physionet/eicu/sepsis/sepsis_prediction_dataset.csv \
+    --output /home/gaga/data/physionet/eicu/sepsis/sepsis_trajectory_probs.csv \
     --window-days 3.0 \
     --n-batches 8 \
     --cohort-splits ${COHORT_SPLITS} \

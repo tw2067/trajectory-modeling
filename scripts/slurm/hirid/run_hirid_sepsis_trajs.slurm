@@ -28,8 +28,8 @@ cd /home/gaga/tamarw1/trajectory-modeling/scripts || exit 1
 
 # Run trajectory computation for all three biomarkers
 python hirid_sepsis_trajs.py \
-    --input-dir ../results/hirid/sepsis \
-    --output-dir ../results/hirid/sepsis \
+    --input-dir /home/gaga/data/physionet/hirid/sepsis \
+    --output-dir /home/gaga/data/physionet/hirid/sepsis \
     --window-days 3.0 \
     --n-batches 10 \
     --sampler pymc

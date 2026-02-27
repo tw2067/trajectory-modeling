@@ -36,10 +36,10 @@ print(f"[Setup] Thread limits: OMP/MKL/OpenBLAS = 1")
 def main():
     parser = argparse.ArgumentParser(description='Compute HiRiD ventilator trajectory probabilities')
     parser.add_argument('--input', type=str, 
-                       default='../results/hirid/ventilator/pf_ratio_timeseries.csv',
+                       default='/home/gaga/data/physionet/hirid/ventilator/pf_ratio_timeseries.csv',
                        help='Path to P/F ratio time series CSV file')
     parser.add_argument('--output', type=str,
-                       default='../results/hirid/ventilator/ventilator_trajectory_probs_bayes.csv',
+                       default='/home/gaga/data/physionet/hirid/ventilator/ventilator_trajectory_probs_bayes.csv',
                        help='Path to save trajectory probabilities')
     parser.add_argument('--window-days', type=float, default=3.0,
                        help='Lookback window in days (default: 3.0, aligned with MIMIC ventilator)')

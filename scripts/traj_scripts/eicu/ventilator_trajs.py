@@ -86,16 +86,16 @@ def precompile_pytensor_functions(config):
 def main():
     parser = argparse.ArgumentParser(description='Compute eICU ventilator trajectory probabilities')
     parser.add_argument('--input', type=str, 
-                       default='results/eicu/ventilator/pf_ratio_timeseries.csv',
+                       default='/home/gaga/data/physionet/eicu/ventilator/pf_ratio_timeseries.csv',
                        help='Path to raw P/F ratio time series CSV')
     parser.add_argument('--pred-dataset', type=str,
-                       default='results/eicu/ventilator/ventilator_prediction_dataset.csv',
+                       default='/home/gaga/data/physionet/eicu/ventilator/ventilator_prediction_dataset.csv',
                        help='Path to prediction dataset for merging')
     parser.add_argument('--output', type=str,
-                       default='results/eicu/ventilator/ventilator_trajectory_probs.csv',
+                       default='/home/gaga/data/physionet/eicu/ventilator/ventilator_trajectory_probs.csv',
                        help='Path to save prediction dataset merged with probabilities')
     parser.add_argument('--probs-output', type=str,
-                       default='results/eicu/ventilator/ventilator_trajectory_probs_bayes.csv',
+                       default='/home/gaga/data/physionet/eicu/ventilator/ventilator_trajectory_probs_bayes.csv',
                        help='Path to save time series with trajectory probabilities')
     parser.add_argument('--merged-output', type=str,
                        default=None,
