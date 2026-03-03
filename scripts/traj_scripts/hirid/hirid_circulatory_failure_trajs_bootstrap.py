@@ -2,7 +2,7 @@
 Compute BOOTSTRAP trajectory probabilities for HiRiD circulatory failure biomarkers (lactate, heartrate, systolic).
 
 Usage:
-    python hirid_circulatory_failure_trajs_bootstrap.py --data-dir results/hirid/circulatory_failure
+    python hirid_circulatory_failure_trajs_bootstrap.py --data-dir /home/gaga/data/physionet/hirid/circulatory_failure
 """
 
 import pandas as pd

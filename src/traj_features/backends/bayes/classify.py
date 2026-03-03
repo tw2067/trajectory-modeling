@@ -1,6 +1,8 @@
 from __future__ import annotations
 import numpy as np
 from collections.abc import Callable, Iterable
+import warnings
+warnings.filterwarnings('ignore')
 
 def flags_from_traj(traj, time_grid, flat_thr=-1, decline_thr=-2, nonlinear_gap=3, label_map=None):
     """

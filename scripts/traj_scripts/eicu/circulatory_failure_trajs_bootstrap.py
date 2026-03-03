@@ -4,7 +4,7 @@ Compute BOOTSTRAP trajectory probabilities for circulatory failure biomarkers (l
 This uses the faster bootstrap method instead of Bayesian inference.
 
 Usage:
-    python circulatory_failure_trajs_bootstrap.py --data-dir results/eicu/circulatory_failure
+    python circulatory_failure_trajs_bootstrap.py --data-dir /home/gaga/data/physionet/eicu/circulatory_failure
 """
 
 import pandas as pd
@@ -14,6 +14,8 @@ import os
 import gc
 from pathlib import Path
 import sys
+import warnings
+warnings.filterwarnings('ignore')
 
 # Limit threading for cluster jobs
 os.environ['OMP_NUM_THREADS'] = '4'
@@ -24,6 +26,7 @@ sys.path.insert(0, os.path.abspath('src'))
 
 from traj_features.backends.bootstrap import BootstrapTrajPS, BootstrapConfig
 from traj_features.backends.bayes.classify import pos_flags_from_traj, flags_from_traj
+
 
 
 BIOMARKERS = {

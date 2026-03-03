@@ -10,6 +10,8 @@ from typing import Optional, Dict, Callable
 from lifelines import CoxTimeVaryingFitter
 from .pipeline import compute_bootstrap_trajectory_covariates_parallel
 from ..bayes.classify import flags_from_traj
+import warnings
+warnings.filterwarnings('ignore')
 
 
 @dataclass

@@ -2,7 +2,7 @@
 Compute BOOTSTRAP trajectory probabilities for MIMIC circulatory failure biomarkers (lactate, heartrate, systolic).
 
 Usage:
-    python circulatory_failure_trajs_bootstrap.py --data-dir results/mimic/circulatory_failure
+    python circulatory_failure_trajs_bootstrap.py --data-dir /home/gaga/data/physionet/mimic/circulatory_failure
 """
 
 import pandas as pd

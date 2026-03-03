@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=eicu_circ_bootstrap
 #SBATCH --output=/home/gaga/tamarw1/trajectory-modeling/logs/outs/eicu_circ_bootstrap_%A_%a.out
+#SBATCH --error=/home/gaga/tamarw1/trajectory-modeling/logs/errs/eicu_circ_bootstrap_%A_%a.err
 #SBATCH --time=08:00:00
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=32G
@@ -30,14 +31,17 @@ action_script=/home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/eicu/c
 echo "Running: $action_script"
 echo "Cohort: ${COHORT_INDEX}/${COHORT_SPLITS}"
 
+echo "Executing bootstrap trajectory generation only for biomarkers: heartrate, systolic"
+
 python $action_script \
-    --data-dir /home/gaga/tamarw1/trajectory-modeling/results/eicu/circulatory_failure \
-    --pred-dataset /home/gaga/tamarw1/trajectory-modeling/results/eicu/circulatory_failure/circulatory_failure_prediction_dataset.csv \
-    --merged-output /home/gaga/tamarw1/trajectory-modeling/results/eicu/circulatory_failure/circulatory_failure_prediction_dataset_with_bootstrap_probs.csv \
+    --data-dir /home/gaga/data/physionet/eicu/circulatory_failure \
+    --pred-dataset /home/gaga/data/physionet/eicu/circulatory_failure/circulatory_failure_prediction_dataset.csv \
+    --merged-output /home/gaga/data/physionet/eicu/circulatory_failure/circulatory_failure_prediction_dataset_with_bootstrap_probs.csv \
     --window-hours 12.0 \
     --n-bootstrap 200 \
     --n-batches 8 \
     --id-col stay_id \
+    --biomarkers heartrate systolic \
     --cohort-splits ${COHORT_SPLITS} \
     --cohort-index ${COHORT_INDEX}
 

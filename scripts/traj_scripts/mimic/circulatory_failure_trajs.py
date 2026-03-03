@@ -2,10 +2,10 @@
 Compute biomarker trajectory probabilities for the MIMIC circulatory failure cohort.
 
 Usage (examples):
-    python circulatory_failure_trajs.py --biomarker lactate  --input results/mimic/circulatory_failure/lactate_timeseries.csv  --pred-dataset results/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv --output results/mimic/circulatory_failure/lactate_trajectory_probs_bayes.csv
-    python circulatory_failure_trajs.py --biomarker heartrate --input results/mimic/circulatory_failure/heartrate_timeseries.csv --pred-dataset results/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv --output results/mimic/circulatory_failure/heartrate_trajectory_probs_bayes.csv
-    python circulatory_failure_trajs.py --biomarker systolic --input results/mimic/circulatory_failure/systolic_timeseries.csv --pred-dataset results/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv --output results/mimic/circulatory_failure/systolic_trajectory_probs_bayes.csv
-    python circulatory_failure_trajs.py --biomarker all --data-dir results/mimic/circulatory_failure --pred-dataset results/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv
+    python circulatory_failure_trajs.py --biomarker lactate  --input /home/gaga/data/physionet/mimic/circulatory_failure/lactate_timeseries.csv  --pred-dataset /home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv --output /home/gaga/data/physionet/mimic/circulatory_failure/lactate_trajectory_probs_bayes.csv
+    python circulatory_failure_trajs.py --biomarker heartrate --input /home/gaga/data/physionet/mimic/circulatory_failure/heartrate_timeseries.csv --pred-dataset /home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv --output /home/gaga/data/physionet/mimic/circulatory_failure/heartrate_trajectory_probs_bayes.csv
+    python circulatory_failure_trajs.py --biomarker systolic --input /home/gaga/data/physionet/mimic/circulatory_failure/systolic_timeseries.csv --pred-dataset /home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv --output /home/gaga/data/physionet/mimic/circulatory_failure/systolic_trajectory_probs_bayes.csv
+    python circulatory_failure_trajs.py --biomarker all --data-dir /home/gaga/data/physionet/mimic/circulatory_failure --pred-dataset /home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv
 """
 
 import pandas as pd
