@@ -28,9 +28,9 @@ BIOMARKERS = {
     'lactate': {
         'file': 'lactate_timeseries.csv',
         'value_col': 'lactate',
-        'flat_thr': 0.04,
-        'decline_thr': 0.15,
-        'nonlinear_gap': 0.2,
+        'flat_thr': 0.03,
+        'decline_thr': 0.12,
+        'nonlinear_gap': 0.18,
         'class_func': pos_flags_from_traj,
         'traj_types': ('stable', 'gradual_increase', 'rapid_increase'),
         'label_map': {'nonprogression': 'stable', 'linear': 'gradual_increase', 'nonlinear': 'rapid_increase'},
@@ -38,9 +38,9 @@ BIOMARKERS = {
     'heartrate': {
         'file': 'heartrate_timeseries.csv',
         'value_col': 'heartrate',
-        'flat_thr': 1.5,
-        'decline_thr': 6.0,
-        'nonlinear_gap': 10.0,
+        'flat_thr': 1.2,
+        'decline_thr': 4.5,
+        'nonlinear_gap': 7.0,
         'class_func': pos_flags_from_traj,
         'traj_types': ('stable', 'gradual_increase', 'rapid_increase'),
         'label_map': {'nonprogression': 'stable', 'linear': 'gradual_increase', 'nonlinear': 'rapid_increase'},
@@ -48,9 +48,9 @@ BIOMARKERS = {
     'systolic': {
         'file': 'systolic_timeseries.csv',
         'value_col': 'systolic',
-        'flat_thr': -1.5,
-        'decline_thr': -6.0,
-        'nonlinear_gap': 8.0,
+        'flat_thr': -1.2,
+        'decline_thr': -4.5,
+        'nonlinear_gap': 7.0,
         'class_func': flags_from_traj,
         'traj_types': ('stable', 'gradual_decline', 'rapid_decline'),
         'label_map': {'nonprogression': 'stable', 'linear': 'gradual_decline', 'nonlinear': 'rapid_decline'},
@@ -58,19 +58,42 @@ BIOMARKERS = {
 }
 
 
+def _load_table(path: Path) -> pd.DataFrame:
+    if path.suffix == '.parquet':
+        return pd.read_parquet(path)
+    return pd.read_csv(path)
+
+
+def _save_table(df: pd.DataFrame, path: Path, parquet_compression: str = 'zstd') -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.suffix == '.parquet':
+        df.to_parquet(path, index=False, compression=parquet_compression)
+    else:
+        df.to_csv(path, index=False)
+
+
+def _resolve_input_path(data_dir: Path, csv_name: str) -> Path:
+    parquet_path = data_dir / csv_name.replace('.csv', '.parquet')
+    csv_path = data_dir / csv_name
+    if parquet_path.exists():
+        return parquet_path
+    return csv_path
+
+
 def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window_hours, n_bootstrap, n_batches, cohort_patients=None):
     print("\n" + "=" * 80)
     print(f"Computing Bootstrap Trajectories: {biomarker_name.upper()}")
     print("=" * 80)
 
-    ts_path = data_dir / config_dict['file']
+    ts_path = _resolve_input_path(data_dir, config_dict['file'])
     print(f"\n📊 Loading {biomarker_name} time series from: {ts_path}")
 
     if not ts_path.exists():
         print(f"   ⚠️  WARNING: File not found, skipping {biomarker_name}")
         return None
 
-    ts_df = pd.read_csv(ts_path)
+    ts_df = _load_table(ts_path)
+    
     
     # HiRiD uses patientid
     id_col = 'patientid'
@@ -83,6 +106,10 @@ def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window
             print(f"   ⚠️  WARNING: No ID column found, skipping {biomarker_name}")
             return None
     
+    if cohort_patients is not None:
+        ts_df = ts_df[ts_df[id_col].isin(cohort_patients)].copy()
+        print(f"   Filtered to cohort: {ts_df[id_col].nunique():,} patients")
+
     n_patients = ts_df[id_col].nunique()
     n_rows = len(ts_df)
 
@@ -110,19 +137,17 @@ def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window
     else:
         print(f"   ⚠️  WARNING: No time columns found, skipping {biomarker_name}")
         return None
-
-    id_time_map = ts_df[[id_col, windowing_col]].drop_duplicates()
-
+    
+    ts_df = ts_df.drop_duplicates(subset=[id_col, time_col])
     traj_input = ts_df[[id_col, time_col, windowing_col, value_col]].copy()
     traj_input = traj_input.rename(columns={
         id_col: 'patientid',
         value_col: 'lab_value'
     })
+    traj_input['lab_value'] = pd.to_numeric(traj_input['lab_value'], errors='coerce').astype(np.float32)
     traj_input = traj_input.dropna(subset=['lab_value']).sort_values(by=['patientid', time_col])
-    
-    if cohort_patients is not None:
-        traj_input = traj_input[traj_input['patientid'].isin(cohort_patients)]
-        print(f"   Filtered to cohort: {traj_input['patientid'].nunique():,} patients")
+    del ts_df
+    gc.collect()
 
     config = BootstrapConfig(
         window_years=window_hours,
@@ -171,8 +196,10 @@ def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window
         print(f"   Batch {i + 1}/{n_batches} ({len(subset_patients)} patients)...", end=' ', flush=True)
 
         try:
-            batch_probs = traj_model.embed(traj_input[traj_input['patientid'].isin(subset_patients)])
+            batch_input = traj_input[traj_input['patientid'].isin(subset_patients)]
+            batch_probs = traj_model.embed(batch_input)
             trajectory_probs_list.append(batch_probs)
+            del batch_input
             print("✓")
         except Exception as e:
             print(f"✗ FAILED: {e}")
@@ -198,19 +225,35 @@ def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window
 
     # Ensure windowing column is present for merging
     if windowing_col not in trajectory_probs.columns:
-        # If missing, try to reconstruct from original time column map
-        trajectory_probs = trajectory_probs.merge(id_time_map, on=id_col, how='left', suffixes=('', '_reconstructed'))
-        if f'{windowing_col}_reconstructed' in trajectory_probs.columns:
-            trajectory_probs[windowing_col] = trajectory_probs[f'{windowing_col}_reconstructed']
-            trajectory_probs = trajectory_probs.drop(columns=[f'{windowing_col}_reconstructed'])
+        # Avoid explosive many-to-many merge by id only; derive from time if possible
+        if time_col in trajectory_probs.columns:
+            if windowing_col == 'time_hour':
+                trajectory_probs[windowing_col] = np.floor(pd.to_numeric(trajectory_probs[time_col], errors='coerce')).astype('Int64')
+            elif windowing_col == 'time_day':
+                trajectory_probs[windowing_col] = np.floor(pd.to_numeric(trajectory_probs[time_col], errors='coerce')).astype('Int64')
+        else:
+            print(f"   ⚠️  WARNING: Missing '{windowing_col}' and '{time_col}' in model output; skipping {biomarker_name} to avoid invalid merge")
+            return None
 
     result_cols = [id_col, windowing_col, f'{biomarker_name}_stable', f'{biomarker_name}_gradual', f'{biomarker_name}_rapid']
     result = trajectory_probs[[c for c in result_cols if c in trajectory_probs.columns]].copy()
+    for c in [f'{biomarker_name}_stable', f'{biomarker_name}_gradual', f'{biomarker_name}_rapid']:
+        if c in result.columns:
+            result[c] = pd.to_numeric(result[c], errors='coerce').astype(np.float32)
 
     prob_cols = [f'{biomarker_name}_stable', f'{biomarker_name}_gradual', f'{biomarker_name}_rapid']
+    key_cols = [id_col, windowing_col]
+    dup_n = result.duplicated(subset=key_cols).sum()
+    if dup_n > 0:
+        print(f"   WARNING: {dup_n:,} duplicate key rows found for {biomarker_name}; aggregating by mean on probabilities")
+        result = result.groupby(key_cols, as_index=False)[prob_cols].mean()
+
     missing = result[prob_cols].isna().any(axis=1).sum()
     if missing > 0:
         print(f"   WARNING: Missing probabilities for {missing} rows in {biomarker_name} time series.")
+
+    del trajectory_probs, trajectory_probs_list, traj_input, patients
+    gc.collect()
 
     print(f"   ✓ Computed {len(result):,} trajectory windows for {biomarker_name}")
     return result, id_col, windowing_col
@@ -236,6 +279,12 @@ def main():
                         help='Which cohort split to process (0-indexed)')
     parser.add_argument('--biomarkers', type=str, nargs='+', default=None,
                         help='Specific biomarkers to process (default: all)')
+    parser.add_argument('--output-format', type=str, default='parquet', choices=['csv', 'parquet', 'both'],
+                        help='Output format for trajectory probabilities (default: parquet)')
+    parser.add_argument('--parquet-compression', type=str, default='zstd',
+                        help='Parquet compression codec (default: zstd)')
+    parser.add_argument('--skip-existing', action='store_true',
+                        help='Skip processing if output files already exist')
 
     args = parser.parse_args()
 
@@ -257,16 +306,18 @@ def main():
     cohort_patients = None
     if args.cohort_splits > 1:
         if args.pred_dataset and Path(args.pred_dataset).exists():
-            prediction_dataset = pd.read_csv(args.pred_dataset)
+            prediction_dataset = _load_table(Path(args.pred_dataset))
             id_col = 'patientid' if 'patientid' in prediction_dataset.columns else 'stay_id'
             all_patients = prediction_dataset[id_col].unique()
         else:
             first_biomarker = next(iter(biomarkers_to_process.values()))
             ts_path = data_dir / first_biomarker['file']
             if ts_path.exists():
-                ts_df = pd.read_csv(ts_path)
+                ts_df = _load_table(ts_path)
                 id_col = 'patientid' if 'patientid' in ts_df.columns else 'stay_id'
                 all_patients = ts_df[id_col].unique()
+                del ts_df
+                gc.collect()
             else:
                 all_patients = None
 
@@ -283,6 +334,21 @@ def main():
 
     # Process each biomarker
     for biomarker, cfg in biomarkers_to_process.items():
+        if args.skip_existing:
+            expected_paths = []
+            base_name = f"{biomarker}_trajectory_probs_bootstrap"
+            if args.cohort_splits > 1:
+                base_name = f"{base_name}_cohort{args.cohort_index:02d}"
+            if args.output_format in ('parquet', 'both'):
+                expected_paths.append(data_dir / f"{base_name}.parquet")
+            if args.output_format in ('csv', 'both'):
+                expected_paths.append(data_dir / f"{base_name}.csv")
+
+            if all(p.exists() for p in expected_paths):
+                print(f"\n✓ Skipping {biomarker} (output files already exist)")
+                biomarker_results[biomarker] = expected_paths[0]
+                continue
+            
         result = compute_biomarker_trajectories(
             biomarker_name=biomarker,
             config_dict=cfg,
@@ -295,13 +361,23 @@ def main():
         if result is not None:
             traj_df, detected_id_col, detected_windowing_col = result
             # Save individual biomarker results
-            output_name = f"{biomarker}_trajectory_probs_bootstrap.csv"
+            base_name = f"{biomarker}_trajectory_probs_bootstrap"
             if args.cohort_splits > 1:
-                output_name = f"{biomarker}_trajectory_probs_bootstrap_cohort{args.cohort_index:02d}.csv"
-            output_path = data_dir / output_name
-            traj_df.to_csv(output_path, index=False)
-            print(f"   ✓ Saved: {output_path}")
-            biomarker_results[biomarker] = traj_df
+                base_name = f"{base_name}_cohort{args.cohort_index:02d}"
+
+            output_paths = []
+            if args.output_format in ('parquet', 'both'):
+                output_paths.append(data_dir / f"{base_name}.parquet")
+            if args.output_format in ('csv', 'both'):
+                output_paths.append(data_dir / f"{base_name}.csv")
+
+            for output_path in output_paths:
+                _save_table(traj_df, output_path, parquet_compression=args.parquet_compression)
+                print(f"   ✓ Saved: {output_path}")
+
+            biomarker_results[biomarker] = output_paths[0]
+            del traj_df
+            gc.collect()
 
     if not biomarker_results:
         print("\n❌ ERROR: No biomarker trajectories were computed successfully")
@@ -310,7 +386,7 @@ def main():
     # Merge with prediction dataset if provided
     if args.pred_dataset and Path(args.pred_dataset).exists():
         print(f"\nLoading prediction dataset: {args.pred_dataset}")
-        prediction_dataset = pd.read_csv(args.pred_dataset)
+        prediction_dataset = _load_table(Path(args.pred_dataset))
         
         id_col = detected_id_col
         windowing_col = detected_windowing_col
@@ -319,22 +395,49 @@ def main():
             prediction_dataset = prediction_dataset[prediction_dataset[id_col].isin(cohort_patients)]
         print(f"   Samples: {len(prediction_dataset):,}")
 
-        merged = prediction_dataset.copy()
-        for biomarker, traj_df in biomarker_results.items():
-            print(f"\nMerging {biomarker} trajectories...")
-            merged = merged.merge(traj_df, on=[id_col, windowing_col], how='left')
+        key_cols = [id_col, windowing_col]
+        pred_dup_n = prediction_dataset.duplicated(subset=key_cols).sum()
+        if pred_dup_n > 0:
+            print(f"   WARNING: prediction dataset has {pred_dup_n:,} duplicate key rows; keeping first per key")
+            prediction_dataset = prediction_dataset.drop_duplicates(subset=key_cols, keep='first')
 
+        merged = prediction_dataset.copy()
+        del prediction_dataset
+        gc.collect()
+
+        for biomarker, traj_path in biomarker_results.items():
+            print(f"\nMerging {biomarker} trajectories...")
+            traj_df = _load_table(traj_path)
             prob_cols = [f"{biomarker}_stable", f"{biomarker}_gradual", f"{biomarker}_rapid"]
+            traj_dup_n = traj_df.duplicated(subset=key_cols).sum()
+            if traj_dup_n > 0:
+                print(f"   WARNING: {traj_dup_n:,} duplicate key rows in {biomarker} file; aggregating before merge")
+                traj_df = traj_df.groupby(key_cols, as_index=False)[prob_cols].mean()
+
+            merged = merged.merge(traj_df, on=key_cols, how='left', validate='one_to_one')
+            del traj_df
+            gc.collect()
+
             available_cols = [c for c in prob_cols if c in merged.columns]
             if available_cols:
                 missing = merged[available_cols].isna().any(axis=1).sum()
                 print(f"   Rows with {biomarker} probs: {len(merged) - missing:,} / {len(merged):,}")
 
-        merged_path = Path(args.merged_output) if args.merged_output else data_dir / "circulatory_failure_prediction_dataset_with_bootstrap_probs.csv"
+        base_merged_path = Path(args.merged_output) if args.merged_output else data_dir / "circulatory_failure_prediction_dataset_with_bootstrap_probs"
+        if base_merged_path.suffix in ('.csv', '.parquet'):
+            base_merged_path = base_merged_path.with_suffix('')
         if args.cohort_splits > 1:
-            merged_path = merged_path.parent / f"{merged_path.stem}_cohort{args.cohort_index:02d}{merged_path.suffix}"
-        merged.to_csv(merged_path, index=False)
-        print(f"\n✓ Saved merged prediction dataset: {merged_path}")
+            base_merged_path = base_merged_path.parent / f"{base_merged_path.name}_cohort{args.cohort_index:02d}"
+
+        merged_paths = []
+        if args.output_format in ('parquet', 'both'):
+            merged_paths.append(base_merged_path.with_suffix('.parquet'))
+        if args.output_format in ('csv', 'both'):
+            merged_paths.append(base_merged_path.with_suffix('.csv'))
+
+        for merged_path in merged_paths:
+            _save_table(merged, merged_path, parquet_compression=args.parquet_compression)
+            print(f"\n✓ Saved merged prediction dataset: {merged_path}")
 
     print("\n" + "=" * 80)
     print("Bootstrap trajectory computation complete!")

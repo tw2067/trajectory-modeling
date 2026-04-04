@@ -31,15 +31,20 @@ action_script=/home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/mimic/
 echo "Running: $action_script"
 echo "Cohort: ${COHORT_INDEX}/${COHORT_SPLITS}"
 
+OUTPUT_FORMAT="parquet"
+PARQUET_COMPRESSION="zstd"
+
 python $action_script \
     --data-dir /home/gaga/data/physionet/mimic/circulatory_failure \
     --pred-dataset /home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv \
-    --merged-output /home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset_with_bootstrap_probs.csv \
+    --merged-output /home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset_with_bootstrap_probs \
     --window-hours 12.0 \
     --n-bootstrap 200 \
     --n-batches 8 \
     --cohort-splits ${COHORT_SPLITS} \
-    --cohort-index ${COHORT_INDEX}
+    --cohort-index ${COHORT_INDEX} \
+    --output-format ${OUTPUT_FORMAT} \
+    --parquet-compression ${PARQUET_COMPRESSION}
 
 EXIT_CODE=$?
 

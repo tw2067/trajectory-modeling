@@ -2,60 +2,51 @@
 # Merge bootstrap trajectory cohort files for MIMIC circulatory failure
 # Run after all SLURM array jobs complete
 
-set -e
+set -euo pipefail
 
 DATA_DIR="/home/gaga/data/physionet/mimic/circulatory_failure"
 N_COHORTS=5
 
 echo "Merging MIMIC Circulatory Failure Bootstrap trajectory files..."
 
-# Merge each biomarker's trajectory files
-for biomarker in lactate heartrate systolic; do
-    echo "  Merging ${biomarker}..."
-    output_file="${DATA_DIR}/${biomarker}_trajectory_probs_bootstrap.csv"
-    
-    # Get header from first cohort file
-    first_file="${DATA_DIR}/${biomarker}_trajectory_probs_bootstrap_cohort00.csv"
-    if [[ -f "$first_file" ]]; then
-        head -n 1 "$first_file" > "$output_file"
-        
-        # Append data from all cohort files (skip headers)
-        for i in $(seq 0 $((N_COHORTS - 1))); do
-            cohort_file="${DATA_DIR}/${biomarker}_trajectory_probs_bootstrap_cohort$(printf '%02d' $i).csv"
-            if [[ -f "$cohort_file" ]]; then
-                tail -n +2 "$cohort_file" >> "$output_file"
-            else
-                echo "    WARNING: Missing $cohort_file"
-            fi
-        done
-        
-        echo "    ✓ Created $output_file ($(wc -l < "$output_file") lines)"
-    else
-        echo "    WARNING: No cohort files found for ${biomarker}"
-    fi
-done
+python - <<'PY'
+from pathlib import Path
+import pandas as pd
 
-# Merge prediction dataset files
-echo "  Merging prediction datasets..."
-output_file="${DATA_DIR}/circulatory_failure_prediction_dataset_with_bootstrap_probs.csv"
-first_file="${DATA_DIR}/circulatory_failure_prediction_dataset_with_bootstrap_probs_cohort00.csv"
+data_dir = Path("/home/gaga/data/physionet/mimic/circulatory_failure")
+n_cohorts = 5
 
-if [[ -f "$first_file" ]]; then
-    head -n 1 "$first_file" > "$output_file"
-    
-    for i in $(seq 0 $((N_COHORTS - 1))); do
-        cohort_file="${DATA_DIR}/circulatory_failure_prediction_dataset_with_bootstrap_probs_cohort$(printf '%02d' $i).csv"
-        if [[ -f "$cohort_file" ]]; then
-            tail -n +2 "$cohort_file" >> "$output_file"
-        else
-            echo "    WARNING: Missing $cohort_file"
-        fi
-    done
-    
-    echo "    ✓ Created $output_file ($(wc -l < "$output_file") lines)"
-else
-    echo "    WARNING: No prediction dataset cohort files found"
-fi
+def merge_base(base_name: str):
+    parts = []
+    for i in range(n_cohorts):
+        p_parquet = data_dir / f"{base_name}_cohort{i:02d}.parquet"
+        p_csv = data_dir / f"{base_name}_cohort{i:02d}.csv"
+        if p_parquet.exists():
+            parts.append(pd.read_parquet(p_parquet))
+        elif p_csv.exists():
+            parts.append(pd.read_csv(p_csv))
+        else:
+            print(f"  WARNING: Missing cohort file for {base_name}, cohort={i:02d}")
 
-echo ""
-echo "✓ Merge complete!"
+    if not parts:
+        print(f"  WARNING: No cohort files found for {base_name}")
+        return
+
+    merged = pd.concat(parts, ignore_index=True)
+    out_parquet = data_dir / f"{base_name}.parquet"
+    out_csv = data_dir / f"{base_name}.csv"
+    merged.to_parquet(out_parquet, index=False, compression="zstd")
+    merged.to_csv(out_csv, index=False)
+    print(f"  ✓ Created {out_parquet} ({len(merged):,} rows)")
+    print(f"  ✓ Created {out_csv} ({len(merged):,} rows)")
+
+
+for biomarker in ["lactate", "heartrate", "systolic"]:
+    print(f"Merging {biomarker}...")
+    merge_base(f"{biomarker}_trajectory_probs_bootstrap")
+
+print("Merging prediction dataset...")
+merge_base("circulatory_failure_prediction_dataset_with_bootstrap_probs")
+
+print("\n✓ Merge complete!")
+PY

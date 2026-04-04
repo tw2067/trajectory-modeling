@@ -7,7 +7,7 @@
 #SBATCH --mem=32G
 
 #SBATCH --partition=cpu-killable
-#SBATCH --array=0-4
+#SBATCH --array=0-7
 
 # Navigate to project directory
 cd /home/gaga/tamarw1/trajectory-modeling || exit 1
@@ -23,7 +23,7 @@ echo "Start time: $(date)"
 echo "========================================================================"
 
 # Cohort splitting
-COHORT_SPLITS=5
+COHORT_SPLITS=8
 COHORT_INDEX=${SLURM_ARRAY_TASK_ID}
 
 action_script=/home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/hirid/hirid_circulatory_failure_trajs_bootstrap.py
@@ -31,15 +31,21 @@ action_script=/home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/hirid/
 echo "Running: $action_script"
 echo "Cohort: ${COHORT_INDEX}/${COHORT_SPLITS}"
 
+OUTPUT_FORMAT="parquet"
+PARQUET_COMPRESSION="zstd"
+
 python $action_script \
     --data-dir /home/gaga/data/physionet/hirid/circulatory_failure \
     --pred-dataset /home/gaga/data/physionet/hirid/circulatory_failure/circulatory_failure_prediction_dataset.csv \
-    --merged-output /home/gaga/data/physionet/hirid/circulatory_failure/circulatory_failure_prediction_dataset_with_bootstrap_probs.csv \
+    --merged-output /home/gaga/data/physionet/hirid/circulatory_failure/circulatory_failure_prediction_dataset_with_bootstrap_probs \
     --window-hours 12.0 \
     --n-bootstrap 200 \
     --n-batches 8 \
     --cohort-splits ${COHORT_SPLITS} \
-    --cohort-index ${COHORT_INDEX}
+    --cohort-index ${COHORT_INDEX} \
+    --output-format ${OUTPUT_FORMAT} \
+    --parquet-compression ${PARQUET_COMPRESSION} \
+    --skip-existing
 
 EXIT_CODE=$?
 
