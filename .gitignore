@@ -1,10 +1,16 @@
 /illustrations.pptx
 __pycache__/
 *.pyc
+*.pyo
 .venv/
 .env
 /data/
 /code/
 logs/
+results/
+*.out
+*.err
+*.pid
+.*.pid
 *.pt
-*.csv
+.ipynb_checkpoints/

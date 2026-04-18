@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #SBATCH --job-name=mimic_liver_trajs_retry
-#SBATCH --output=/home/gaga/tamarw1/trajectory-modeling/logs/outs/retry/mimic_liver_%A_%a.out
-#SBATCH --error=/home/gaga/tamarw1/trajectory-modeling/logs/errs/retry/mimic_liver_%A_%a.err
+#SBATCH --output=logs/outs/retry/mimic_liver_%A_%a.out
+#SBATCH --error=logs/errs/retry/mimic_liver_%A_%a.err
 #SBATCH --time=12:00:00
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=128G
@@ -10,8 +10,17 @@
 #SBATCH --array=6
 
 
-# Navigate to project directory
-cd /home/gaga/tamarw1/trajectory-modeling || exit 1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$SCRIPT_DIR}"
+while [[ ! -f "$REPO_ROOT/pyproject.toml" && "$REPO_ROOT" != "/" ]]; do
+	REPO_ROOT="$(dirname "$REPO_ROOT")"
+done
+[[ -f "$REPO_ROOT/pyproject.toml" ]] || { echo "Could not locate repo root"; exit 1; }
+
+DATA_ROOT="${DATA_ROOT:-/home/gaga/data/physionet}"
+LOG_ROOT="${LOG_ROOT:-$REPO_ROOT/logs}"
+mkdir -p "$LOG_ROOT/outs/retry" "$LOG_ROOT/errs/retry"
+cd "$REPO_ROOT" || exit 1
 
 # Activate conda environment
 source /home/gaga/tamarw1/anaconda3/etc/profile.d/conda.sh
@@ -25,11 +34,11 @@ COHORT_INDEX=${SLURM_ARRAY_TASK_ID}
 echo "Starting MIMIC LIVER TRAJS retry run at $(date)"
 echo ""
 
-python /home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/mimic/liver_trajs.py \
-	--input /home/gaga/tamarw1/trajectory-modeling/results/mimic/liver/bilirubin_timeseries.csv \
-	--pred-dataset /home/gaga/tamarw1/trajectory-modeling/results/mimic/liver/liver_prediction_dataset.csv \
-	--output /home/gaga/tamarw1/trajectory-modeling/results/mimic/liver/bili_trajectory_probs_bayes.csv \
-	--merged-output /home/gaga/tamarw1/trajectory-modeling/results/mimic/liver/liver_prediction_dataset_with_probs.csv \
+python "$REPO_ROOT/scripts/traj_scripts/mimic/liver_trajs.py" \
+	--input "$DATA_ROOT/mimic/liver/bilirubin_timeseries.csv" \
+	--pred-dataset "$DATA_ROOT/mimic/liver/liver_prediction_dataset.csv" \
+	--output "$DATA_ROOT/mimic/liver/bili_trajectory_probs_bayes.csv" \
+	--merged-output "$DATA_ROOT/mimic/liver/liver_prediction_dataset_with_probs.csv" \
 	--cohort-splits ${COHORT_SPLITS} \
 	--cohort-index ${COHORT_INDEX}
 

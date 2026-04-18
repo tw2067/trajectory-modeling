@@ -1,24 +1,34 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #SBATCH --job-name=eicu_aki_trajs
-#SBATCH --output=/home/gaga/tamarw1/trajectory-modeling/logs/outs/eicu_aki_%A_%a.out
-#SBATCH --error=/home/gaga/tamarw1/trajectory-modeling/logs/errs/eicu_aki_%A_%a.err
+#SBATCH --output=logs/outs/eicu_aki_%A_%a.out
+#SBATCH --error=logs/errs/eicu_aki_%A_%a.err
 #SBATCH --time=24:00:00
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=128G
 
 #SBATCH --partition=cpu-killable
-#SBATCH --array=0-19
+#SBATCH --array=0-39
 
 
-# Navigate to project directory
-cd /home/gaga/tamarw1/trajectory-modeling || exit 1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$SCRIPT_DIR}"
+while [[ ! -f "$REPO_ROOT/pyproject.toml" && "$REPO_ROOT" != "/" ]]; do
+    REPO_ROOT="$(dirname "$REPO_ROOT")"
+done
+[[ -f "$REPO_ROOT/pyproject.toml" ]] || { echo "Could not locate repo root"; exit 1; }
+
+DATA_ROOT="${DATA_ROOT:-/home/gaga/data/physionet}"
+RESULTS_ROOT="${RESULTS_ROOT:-$REPO_ROOT/results}"
+LOG_ROOT="${LOG_ROOT:-$REPO_ROOT/logs}"
+mkdir -p "$LOG_ROOT/outs" "$LOG_ROOT/errs" "$RESULTS_ROOT/eicu/aki"
+cd "$REPO_ROOT" || exit 1
 
 # Activate conda environment
 source /home/gaga/tamarw1/anaconda3/etc/profile.d/conda.sh
 conda activate pymc_env
 
 # Cohort splitting
-COHORT_SPLITS=20
+COHORT_SPLITS=40
 COHORT_INDEX=${SLURM_ARRAY_TASK_ID}
 
 # Run eICU AKI trajectory computation
@@ -26,11 +36,11 @@ echo "Starting eICU AKI TRAJS run at $(date)"
 echo "Cohort: 4,062 patients, 37,766 samples"
 echo ""
 
-python /home/gaga/tamarw1/trajectory-modeling/scripts/traj_scripts/eicu/aki_trajs.py \
-    --input /home/gaga/tamarw1/trajectory-modeling/results/eicu/aki/creatinine_timeseries.csv \
-    --pred-dataset /home/gaga/tamarw1/trajectory-modeling/results/eicu/aki/aki_prediction_dataset.csv \
-    --output /home/gaga/tamarw1/trajectory-modeling/results/eicu/aki/aki_trajectory_probs.csv \
-    --probs-output /home/gaga/tamarw1/trajectory-modeling/results/eicu/aki/aki_trajectory_probs_bayes.csv \
+python "$REPO_ROOT/scripts/traj_scripts/eicu/aki_trajs.py" \
+    --input "$DATA_ROOT/eicu/aki/creatinine_timeseries.csv" \
+    --pred-dataset "$DATA_ROOT/eicu/aki/aki_prediction_dataset.csv" \
+    --output "$DATA_ROOT/eicu/aki/aki_trajectory_probs.csv" \
+    --probs-output "$RESULTS_ROOT/eicu/aki/aki_trajectory_probs_bayes.csv" \
     --window-days 7.0 \
     --flat-thr 0.1 \
     --decline-thr 0.3 \

@@ -32,6 +32,9 @@ pip install -e .[all]
 
 ## Quick Start
 
+Canonical operational script index: `scripts/README.md`  
+Proposed scripts reorganization plan: `docs/SCRIPTS_REORGANIZATION_PLAN.md`
+
 ### Extract Trajectory Features
 
 ```python
@@ -57,25 +60,32 @@ trajectory_probs = model.embed(longitudinal_data)
 
 ```bash
 # AKI (serum creatinine trajectories)
-python scripts/hirid_aki_trajs.py --backend bootstrap
+python scripts/trajectory/hirid/hirid_aki_trajs.py
 
 # Sepsis (lactate, WBC, platelets)
-python scripts/hirid_sepsis_trajs.py --backend bootstrap
+python scripts/trajectory/hirid/hirid_sepsis_trajs.py
 
 # Ventilator weaning (P/F ratio)
-python scripts/hirid_ventilator_trajs.py --backend bootstrap
+python scripts/trajectory/hirid/hirid_ventilator_trajs.py
 
-# Compare backends
-python scripts/compare_bootstrap_vs_bayes.py
+# Run a quick Bayesian subset smoke test (mimic/eicu/hirid)
+python scripts/trajectory/run_circulatory_failure_bayes_subset.py --dry-run
 ```
 
 ## `.gitignore`
 ```gitignore
 __pycache__/
 *.pyc
+*.pyo
 .venv/
 .env
 /data/
 logs/
+results/
+*.out
+*.err
+*.pid
+.*.pid
 *.pt
+.ipynb_checkpoints/
 ```

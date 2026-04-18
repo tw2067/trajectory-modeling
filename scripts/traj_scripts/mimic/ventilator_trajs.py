@@ -88,13 +88,13 @@ def precompile_pytensor_functions(config):
 def main():
     parser = argparse.ArgumentParser(description='Compute MIMIC ventilator trajectory probabilities')
     parser.add_argument('--input', type=str,
-                        default='results/mimic/ventilator/pf_ratio_timeseries.csv',
+                        default='/home/gaga/data/physionet/mimic/ventilator/pf_ratio_timeseries.csv',
                         help='Path to raw P/F ratio time series CSV')
     parser.add_argument('--pred-dataset', type=str,
-                        default='results/mimic/ventilator/ventilator_prediction_dataset.csv',
+                        default='/home/gaga/data/physionet/mimic/ventilator/ventilator_prediction_dataset.csv',
                         help='Path to prediction dataset for merging')
     parser.add_argument('--output', type=str,
-                        default='results/mimic/ventilator/pf_trajectory_probs_bayes.csv',
+                        default='/home/gaga/data/physionet/mimic/ventilator/pf_trajectory_probs_bayes.csv',
                         help='Path to save trajectory probabilities (time series + probs)')
     parser.add_argument('--merged-output', type=str,
                         default=None,

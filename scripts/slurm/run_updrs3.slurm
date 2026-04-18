@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #SBATCH --job-name=updrs3_trajs
-#SBATCH --output=/home/gaga/tamarw1/trajectory-modeling/logs/outs/updrs3_%A.out
-#SBATCH --error=/home/gaga/tamarw1/trajectory-modeling/logs/errs/updrs3_%A.err
+#SBATCH --output=logs/outs/updrs3_%A.out
+#SBATCH --error=logs/errs/updrs3_%A.err
 #SBATCH --time=12:00:00
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=64G
@@ -11,14 +11,22 @@
 #SBATCH --partition=gpu-shamir
 
 
-# Navigate to project directory
-cd /home/gaga/tamarw1/trajectory-modeling || exit 1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$SCRIPT_DIR}"
+while [[ ! -f "$REPO_ROOT/pyproject.toml" && "$REPO_ROOT" != "/" ]]; do
+	REPO_ROOT="$(dirname "$REPO_ROOT")"
+done
+[[ -f "$REPO_ROOT/pyproject.toml" ]] || { echo "Could not locate repo root"; exit 1; }
+
+LOG_ROOT="${LOG_ROOT:-$REPO_ROOT/logs}"
+mkdir -p "$LOG_ROOT/outs" "$LOG_ROOT/errs"
+cd "$REPO_ROOT" || exit 1
 
 # Run updrs3 representation
 echo "Starting UPDRS3 run at $(date)"
 echo ""
 
-python code/ppmi_updrs3_bayes.py 
+python "$REPO_ROOT/code/ppmi_updrs3_bayes.py"
 
 EXIT_CODE=$?
 

@@ -21,7 +21,7 @@ import duckdb
 import pandas as pd
 import numpy as np
 
-OUTPUT_DIR = Path("results/hirid/circulatory_failure")
+OUTPUT_DIR = Path("/home/gaga/data/physionet/hirid/circulatory_failure")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 DB_PATH = "/home/gaga/data/physionet/HiRiD/hirid.duckdb"
@@ -48,12 +48,18 @@ print(f"  Total ICU stays: {len(cohort):,}")
 
 patient_ids = cohort['patientid'].tolist()
 
-# Variable IDs
+# Variable IDs (from data/hirid/hirid_variable_reference.csv)
 VARS = {
     200: 'HeartRate',
-    210: 'SysBP',
-    220: 'DiasBP',
-    20001600: 'Lactate',
+    100: 'SysBP',   # Invasive systolic arterial pressure
+    600: 'SysBP',   # Non-invasive systolic arterial pressure
+    120: 'DiasBP',  # Invasive diastolic arterial pressure
+    620: 'DiasBP',  # Non-invasive diastolic arterial pressure
+    110: 'MAP',     # Invasive mean arterial pressure
+    610: 'MAP',     # Non-invasive mean arterial pressure
+    24000524: 'Lactate',  # Arterial blood lactate
+    24000732: 'Lactate',  # Venous blood lactate
+    24000485: 'Lactate',  # Venous blood lactate
 }
 
 # Ranges for sanity filtering
@@ -61,9 +67,14 @@ RANGES = {
     'HeartRate': (20, 300),
     'SysBP': (40, 300),
     'DiasBP': (20, 200),
+    'MAP': (20, 200),
     'Lactate': (0.1, 20),
 }
 
+# Filter cohort to just the cohort we're interested in (saves memory in join)
+cohort_subset = cohort[['patientid', 'admission_time']].copy()
+
+# Manually filter to the variables we want (more efficient than large WHERE IN)
 obs_query = f"""
 SELECT 
     o.patientid,
@@ -74,20 +85,23 @@ SELECT
 FROM observations o
 INNER JOIN patient_info p ON o.patientid = p.patientid
 WHERE 
-    o.variableid IN {tuple(VARS.keys())}
+    o.variableid IN (200, 100, 600, 120, 620, 110, 610, 24000524, 24000732, 24000485)
     AND o.value IS NOT NULL
-    AND o.patientid IN {tuple(patient_ids)}
-ORDER BY o.patientid, o.datetime
+    AND o.patientid IN ({','.join(str(pid) for pid in patient_ids)})
 """
 
 obs_df = conn.execute(obs_query).fetchdf()
+print(f"✓ Fetched observations: {len(obs_df):,} rows")
+
+# Ensure variableid is int for proper mapping
+obs_df['variableid'] = obs_df['variableid'].astype(int)
+
 obs_df['feature'] = obs_df['variableid'].map(VARS)
 
-# Filter by ranges
+# Filter by ranges - remove rows where feature is in RANGES and value is outside the valid range
 for feat, (min_v, max_v) in RANGES.items():
-    mask = obs_df['feature'] == feat
-    if mask.any():
-        obs_df = obs_df[~mask | obs_df['valuenum'].between(min_v, max_v)]
+    mask = (obs_df['feature'] == feat) & (~obs_df['valuenum'].between(min_v, max_v))
+    obs_df = obs_df[~mask]
 
 obs_df['charttime'] = pd.to_datetime(obs_df['charttime'])
 obs_df['admittime'] = pd.to_datetime(obs_df['admittime'])
@@ -97,8 +111,10 @@ obs_df['time_hour'] = np.floor(obs_df['time_hours']).astype(int)
 # Time series outputs
 lactate_ts = obs_df[obs_df['feature'] == 'Lactate'].copy()
 lactate_ts = lactate_ts.rename(columns={'patientid': 'patientid', 'valuenum': 'lactate'})
+
 heartrate_ts = obs_df[obs_df['feature'] == 'HeartRate'].copy()
 heartrate_ts = heartrate_ts.rename(columns={'patientid': 'patientid', 'valuenum': 'heartrate'})
+
 sbp_ts = obs_df[obs_df['feature'] == 'SysBP'].copy()
 sbp_ts = sbp_ts.rename(columns={'patientid': 'patientid', 'valuenum': 'systolic'})
 
@@ -131,6 +147,7 @@ print("✓ Saved circulatory time series and cohort")
 
 # Hourly aggregation
 obs_daily = obs_df.groupby(['patientid', 'time_hour', 'feature'])['valuenum'].agg(['min', 'max', 'mean']).reset_index()
+
 obs_daily = obs_daily.pivot_table(
     index=['patientid', 'time_hour'],
     columns='feature',
@@ -140,8 +157,8 @@ obs_daily = obs_daily.pivot_table(
 
 obs_daily.columns = ['_'.join(col).strip('_') for col in obs_daily.columns]
 
-# Compute MAP if SysBP & DiasBP available
-if 'mean_SysBP' in obs_daily.columns and 'mean_DiasBP' in obs_daily.columns:
+# Compute MAP if SysBP & DiasBP available and MAP not already present
+if 'mean_MAP' not in obs_daily.columns and 'mean_SysBP' in obs_daily.columns and 'mean_DiasBP' in obs_daily.columns:
     obs_daily['mean_MAP'] = (2 * obs_daily['mean_DiasBP'] + obs_daily['mean_SysBP']) / 3.0
 
 # Vasopressor detection (HiRiD pharma IDs)
@@ -157,7 +174,7 @@ SELECT r.patientid, r.givenat as charttime, p.admission_time as admittime
 FROM pharma_records r
 INNER JOIN patient_info p ON r.patientid = p.patientid
 WHERE r.pharmaid IN {tuple(VASOPRESSOR_IDS)}
-AND r.patientid IN {tuple(patient_ids)}
+AND r.patientid IN ({','.join(str(pid) for pid in patient_ids)})
 """
 
 vaso_df = conn.execute(vaso_query).fetchdf()
@@ -169,26 +186,39 @@ if len(vaso_df) > 0:
 else:
     vaso_start = pd.DataFrame(columns=['patientid', 'vaso_start_hour'])
 
+# Prepare lactate lookup from raw time series (not pivoted, which has many gaps)
+lactate_hourly = obs_df[obs_df['feature'] == 'Lactate'].groupby(['patientid', 'time_hour'])['valuenum'].mean().reset_index()
+lactate_hourly = lactate_hourly.rename(columns={'valuenum': 'lactate'})
+
 failure_events = []
 excluded = {'already_failure': 0, 'no_future_data': 0, 'ambiguous': 0}
+total_windows = 0
 
 for patientid, grp in obs_daily.groupby('patientid'):
     grp = grp.sort_values('time_hour')
+    patient_lactate = lactate_hourly[lactate_hourly['patientid'] == patientid]
+    total_windows += len(grp)
+    
     for i in range(len(grp)):
         current_time = grp.iloc[i]['time_hour']
         current_map = grp.iloc[i].get('mean_MAP', np.nan)
-        current_lactate = grp.iloc[i].get('mean_Lactate', np.nan)
+        
+        # Get current lactate from hourly aggregation (may be NA if not measured this hour)
+        current_lactate_row = patient_lactate[patient_lactate['time_hour'] == current_time]
+        current_lactate = current_lactate_row['lactate'].iloc[0] if len(current_lactate_row) > 0 else np.nan
 
         current_vaso = False
         if patientid in vaso_start['patientid'].values:
             start_hour = vaso_start[vaso_start['patientid'] == patientid]['vaso_start_hour'].iloc[0]
             current_vaso = start_hour <= current_time
 
-        if pd.isna(current_map) or pd.isna(current_lactate):
+        # Need MAP for prediction; lactate can be missing at current time
+        if pd.isna(current_map):
             excluded['ambiguous'] += 1
             continue
 
-        if current_lactate >= LACTATE_THRESHOLD and (current_map <= MAP_THRESHOLD or current_vaso):
+        # Skip if already in circulatory failure (lactate high AND (hypotension OR vasopressor))
+        if not pd.isna(current_lactate) and current_lactate >= LACTATE_THRESHOLD and (current_map <= MAP_THRESHOLD or current_vaso):
             excluded['already_failure'] += 1
             continue
 
@@ -200,24 +230,37 @@ for patientid, grp in obs_daily.groupby('patientid'):
             excluded['no_future_data'] += 1
             continue
 
-        if 'mean_MAP' not in future_grp.columns or 'mean_Lactate' not in future_grp.columns:
-            excluded['ambiguous'] += 1
-            continue
+        # Check future hypotension from vitals
+        future_hypotension = False
+        if 'mean_MAP' in future_grp.columns:
+            future_hypotension = (future_grp['mean_MAP'].dropna() <= MAP_THRESHOLD).any()
 
-        future_hypotension = (future_grp['mean_MAP'] <= MAP_THRESHOLD).any()
-        future_lactate = (future_grp['mean_Lactate'] >= LACTATE_THRESHOLD).any()
+        # Check future lactate from raw time series
+        future_lactate_df = patient_lactate[
+            (patient_lactate['time_hour'] >= prediction_start) & 
+            (patient_lactate['time_hour'] <= prediction_end)
+        ]
+        future_lactate = (future_lactate_df['lactate'] >= LACTATE_THRESHOLD).any() if len(future_lactate_df) > 0 else False
 
         vasopressor_in_window = False
         if patientid in vaso_start['patientid'].values:
             start_hour = vaso_start[vaso_start['patientid'] == patientid]['vaso_start_hour'].iloc[0]
             vasopressor_in_window = prediction_start <= start_hour <= prediction_end
 
-        target = int(future_lactate and (future_hypotension or vasopressor_in_window))
+        # Circulatory failure: (hypotension OR vasopressor) AND (high lactate OR no lactate data)
+        target = int((future_hypotension or vasopressor_in_window) and (future_lactate or len(future_lactate_df) == 0))
         row = grp.iloc[i].to_dict()
         row['target_circulatory_failure'] = target
         failure_events.append(row)
 
 prediction_dataset = pd.DataFrame(failure_events)
+print(f"\n\nOutcome Processing:")
+print(f"  Total time windows examined: {total_windows:,}")
+print(f"  Excluded (already failure): {excluded['already_failure']:,}")
+print(f"  Excluded (no future data): {excluded['no_future_data']:,}")
+print(f"  Excluded (ambiguous/no MAP): {excluded['ambiguous']:,}")
+print(f"  Valid prediction windows: {len(prediction_dataset):,}")
+
 if prediction_dataset.empty:
     prediction_dataset = pd.DataFrame(columns=list(obs_daily.columns) + ['target_circulatory_failure'])
     prediction_dataset.to_csv(OUTPUT_DIR / "circulatory_failure_prediction_dataset.csv", index=False)
@@ -232,7 +275,7 @@ else:
     print(f"✓ Saved {len(prediction_dataset):,} rows")
     print(f"   Positive events: {prediction_dataset['target_circulatory_failure'].sum():,} ({100*prediction_dataset['target_circulatory_failure'].mean():.1f}%)")
     print(f"   Skipped (already failure): {excluded['already_failure']:,}")
-    print(f"   Skipped (no future data): {excluded['no_future_data']:,}")
+    (f"   Skipped (no future data): {excluded['no_future_data']:,}")
 
 conn.close()
 print("\n✓ Circulatory failure preprocessing complete!")

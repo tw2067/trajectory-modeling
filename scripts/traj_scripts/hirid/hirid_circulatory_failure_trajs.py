@@ -62,14 +62,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--input-dir',
         type=str,
-        default='../results/hirid/circulatory_failure',
+        default='/home/gaga/data/physionet/hirid/circulatory_failure',
         help='Directory containing lactate_timeseries.csv, heartrate_timeseries.csv, systolic_timeseries.csv'
     )
 
     parser.add_argument(
         '--output-dir',
         type=str,
-        default='../results/hirid/circulatory_failure',
+        default='/home/gaga/data/physionet/hirid/circulatory_failure',
         help='Directory to write trajectory probability CSVs'
     )
 
@@ -133,9 +133,9 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
         tune=300,
         min_points_per_window=4,
         grid_freq=3,
-        flat_thr=0.04,
-        decline_thr=0.15,
-        nonlinear_gap=0.2,
+        flat_thr=0.03,
+        decline_thr=0.12,
+        nonlinear_gap=0.18,
         pids='patientid',
         values='lab_value',
         time_col='time_hours',
@@ -157,9 +157,9 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
         tune=300,
         min_points_per_window=4,
         grid_freq=3,
-        flat_thr=1.5,
-        decline_thr=6.0,
-        nonlinear_gap=10.0,
+        flat_thr=1.2,
+        decline_thr=4.5,
+        nonlinear_gap=7.0,
         pids='patientid',
         values='lab_value',
         time_col='time_hours',
@@ -181,9 +181,9 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
         tune=300,
         min_points_per_window=4,
         grid_freq=3,
-        flat_thr=-1.5,
-        decline_thr=-6.0,
-        nonlinear_gap=8.0,
+        flat_thr=-1.2,
+        decline_thr=-4.5,
+        nonlinear_gap=7.0,
         pids='patientid',
         values='lab_value',
         time_col='time_hours',
@@ -256,7 +256,18 @@ def _compute_biomarker_probs(spec: BiomarkerSpec, n_batches: int, cohort_patient
 
     df = pd.read_csv(spec.input_path)
 
-    df = df.rename(columns={spec.value_col: spec.value_alias})
+    if spec.value_col not in df.columns:
+        raise KeyError(
+            f"Expected value column '{spec.value_col}' not found in {spec.input_path}. "
+            f"Available columns: {list(df.columns)}"
+        )
+
+    # Keep the original biomarker-specific column while also creating a canonical
+    # value column expected by BayesConfig (`values='lab_value'`).
+    if spec.value_alias != spec.value_col:
+        df = df.rename(columns={spec.value_col: spec.value_alias})
+    df['lab_value'] = df[spec.value_alias]
+
     baseline_name = f"baseline_{spec.value_alias}"
     _coalesce_baseline(df, spec.baseline_candidates, baseline_name)
 

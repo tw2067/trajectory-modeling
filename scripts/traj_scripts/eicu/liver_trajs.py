@@ -85,16 +85,16 @@ def precompile_pytensor_functions(config):
 def main():
     parser = argparse.ArgumentParser(description='Compute eICU liver trajectory probabilities')
     parser.add_argument('--input', type=str, 
-                       default='results/eicu/liver/bilirubin_timeseries.csv',
+                       default='/home/gaga/data/physionet/eicu/liver/bilirubin_timeseries.csv',
                        help='Path to raw bilirubin time series CSV')
     parser.add_argument('--pred-dataset', type=str,
-                       default='results/eicu/liver/liver_prediction_dataset.csv',
+                       default='/home/gaga/data/physionet/eicu/liver/liver_prediction_dataset.csv',
                        help='Path to prediction dataset for merging')
     parser.add_argument('--output', type=str,
-                       default='results/eicu/liver/liver_trajectory_probs.csv',
+                       default='/home/gaga/data/physionet/eicu/liver/liver_trajectory_probs.csv',
                        help='Path to save prediction dataset merged with probabilities')
     parser.add_argument('--probs-output', type=str,
-                       default='results/eicu/liver/liver_trajectory_probs_bayes.csv',
+                       default='/home/gaga/data/physionet/eicu/liver/liver_trajectory_probs_bayes.csv',
                        help='Path to save time series with trajectory probabilities')
     parser.add_argument('--merged-output', type=str,
                        default=None,

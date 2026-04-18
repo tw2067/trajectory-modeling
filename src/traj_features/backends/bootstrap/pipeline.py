@@ -130,7 +130,7 @@ def compute_bootstrap_trajectory_covariates_parallel(
     Returns
     -------
     DataFrame
-        Trajectory probabilities per (patient, time_day)
+        Trajectory probabilities per (patient, windowing_col)
     """
     if class_func is None:
         from ..bayes.classify import flags_from_traj
@@ -145,34 +145,37 @@ def compute_bootstrap_trajectory_covariates_parallel(
     # Create windows
     lab_df = lab_df.sort_values(by=[pids, time_col])
     lab_df['_window_time'] = lab_df[windowing_col]
-    
-    # Round to integer time units for windowing
-    lab_df['time_day'] = lab_df['_window_time'].astype(int)
+
+    # Round/floor to integer window ids using requested windowing column.
+    # IMPORTANT: Keep the output key name aligned with `windowing_col`.
+    lab_df['_window_id'] = np.floor(pd.to_numeric(lab_df['_window_time'], errors='coerce')).astype('Int64')
+    lab_df = lab_df.dropna(subset=['_window_id'])
+    lab_df['_window_id'] = lab_df['_window_id'].astype(int)
     
     # Define windows: for each patient-day, look back window_years
     windows = []
-    for (pid, day), group in lab_df.groupby([pids, 'time_day']):
-        window_start = day - window_years
+    for (pid, window_id), group in lab_df.groupby([pids, '_window_id']):
+        window_start = window_id - window_years
         # Select observations within window
         window_data = lab_df[
             (lab_df[pids] == pid) &
             (lab_df['_window_time'] >= window_start) &
-            (lab_df['_window_time'] <= day)
+            (lab_df['_window_time'] <= window_id)
         ]
         
         if len(window_data) >= min_points_per_window:
-            windows.append((pid, day, window_data))
+            windows.append((pid, window_id, window_data))
     
     if not windows:
         # No valid windows - return empty DataFrame
-        cols = [pids, 'time_day'] + [f'trajtype_{t}_prob' for t in traj_types]
+        cols = [pids, windowing_col] + [f'trajtype_{t}_prob' for t in traj_types]
         return pd.DataFrame(columns=cols)
     
     # Process windows in parallel
     results = Parallel(n_jobs=n_jobs, verbose=10 if progressbar else 0)(
         delayed(process_patient_window)(
             pid=pid,
-            window_id=day,
+            window_id=window_id,
             df_window=window_data,
             time_col=time_col,
             values_col=values,
@@ -186,11 +189,11 @@ def compute_bootstrap_trajectory_covariates_parallel(
             traj_types=traj_types,
             label_map=label_map
         )
-        for pid, day, window_data in windows
+        for pid, window_id, window_data in windows
     )
     
     # Convert to DataFrame
     result_df = pd.DataFrame(results)
-    result_df = result_df.rename(columns={'pid': pids, 'window_id': 'time_day'})
+    result_df = result_df.rename(columns={'pid': pids, 'window_id': windowing_col})
     
     return result_df

@@ -30,7 +30,7 @@ from common import (
     drop_high_missing_columns,
 )
 
-OUTPUT_DIR = Path("results/mimic/aki")
+OUTPUT_DIR = Path("/home/gaga/data/physionet/mimic/aki")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 print("=" * 80)

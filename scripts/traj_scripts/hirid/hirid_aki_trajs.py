@@ -35,10 +35,10 @@ print(f"[Setup] Thread limits: OMP/MKL/OpenBLAS = 1")
 def main():
     parser = argparse.ArgumentParser(description='Compute HiRiD AKI trajectory probabilities')
     parser.add_argument('--input', type=str, 
-                       default='../results/hirid/aki/creatinine_timeseries.csv',
+                       default='/home/gaga/data/physionet/hirid/aki/creatinine_timeseries.csv',
                        help='Path to creatinine time series CSV file')
     parser.add_argument('--output', type=str,
-                       default='../results/hirid/aki/aki_trajectory_probs_bayes.csv',
+                       default='/home/gaga/data/physionet/hirid/aki/aki_trajectory_probs_bayes.csv',
                        help='Path to save trajectory probabilities')
     parser.add_argument('--window-days', type=float, default=7.0,
                        help='Lookback window in days (default: 7.0)')

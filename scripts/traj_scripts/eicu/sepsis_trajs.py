@@ -121,13 +121,13 @@ def main():
     parser.add_argument('--biomarker', type=str, choices=list(BIOMARKER_CONFIG.keys()), default='lactate',
                        help='Biomarker to model (lactate, wbc, platelets)')
     parser.add_argument('--input', type=str, 
-                       default='results/eicu/sepsis/lactate_timeseries.csv',
+                       default='/home/gaga/data/physionet/eicu/sepsis/lactate_timeseries.csv',
                        help='Path to raw biomarker time series CSV')
     parser.add_argument('--pred-dataset', type=str,
-                       default='results/eicu/sepsis/sepsis_prediction_dataset.csv',
+                       default='/home/gaga/data/physionet/eicu/sepsis/sepsis_prediction_dataset.csv',
                        help='Path to prediction dataset for merging')
     parser.add_argument('--output', type=str,
-                       default='results/eicu/sepsis/sepsis_trajectory_probs.csv',
+                       default='/home/gaga/data/physionet/eicu/sepsis/sepsis_trajectory_probs.csv',
                        help='Path to save trajectory probabilities')
     parser.add_argument('--window-days', type=float, default=3.0,
                        help='Lookback window in days (default: 3.0)')

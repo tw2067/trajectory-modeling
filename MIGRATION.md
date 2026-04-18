@@ -60,17 +60,17 @@ pip install -e .[bayes,deep,gam]
 pip install -e .[bayes,bootstrap,evaluation]
 ```
 
-### 3. Update Config Files
+### 3. Update Configuration Style
 
-**Old configs:** `configs/bayes.yaml`, `configs/deep.yaml`, `configs/gam.yaml`
-
-**New configs:** `configs/bayes.yaml`, `configs/bootstrap.yaml`
+This repo now primarily uses script CLI flags and in-code dataclass/config objects
+instead of the old `configs/*.yaml` workflow.
 
 ### 4. Update Scripts
 
 Replace PS-specific scripts with trajectory extraction:
 
 **Old:**
+*(legacy commands; these scripts are no longer present in this repo)*
 ```bash
 python scripts/train.py --backend bayes
 python scripts/predict_ps.py --backend bayes
@@ -78,8 +78,8 @@ python scripts/predict_ps.py --backend bayes
 
 **New:**
 ```bash
-python scripts/hirid_ventilator_trajs.py --backend bootstrap
-python scripts/evaluate_trajectory_methods.py
+python scripts/traj_scripts/hirid/hirid_ventilator_trajs.py
+python scripts/traj_scripts/run_circulatory_failure_bayes_subset.py --dry-run
 ```
 
 ## New Features
@@ -111,12 +111,8 @@ results = compare_trajectory_assignments(
 )
 ```
 
-```bash
-python scripts/evaluate_trajectory_methods.py \
-    --bayesian-probs results/bayes.csv \
-    --bootstrap-probs results/bootstrap.csv \
-    --outcomes data/outcomes.csv
-```
+Use the evaluation helpers directly from Python (for example in a notebook or
+analysis script) via `traj_features.evaluation`.
 
 ### 3. Clinical Dataset Pipelines
 Standardized extraction scripts:
@@ -160,17 +156,9 @@ model = BayesianTrajPS(BayesConfig(window_years=3.0, n_samples=200))
 features = model.embed(data)
 ```
 
-**Compare methods:**
+**Run cohort subset smoke test:**
 ```bash
-python scripts/compare_bootstrap_vs_bayes.py
-```
-
-**Evaluate on clinical task:**
-```bash
-python scripts/evaluate_trajectory_methods.py \
-    --bayesian-probs results/bayes.csv \
-    --bootstrap-probs results/bootstrap.csv \
-    --outcomes data/outcomes.csv
+python scripts/traj_scripts/run_circulatory_failure_bayes_subset.py --dry-run
 ```
 
 ## Questions?

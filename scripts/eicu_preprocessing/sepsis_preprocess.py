@@ -30,9 +30,9 @@ from tqdm import tqdm
 # Configuration
 PREDICTION_GAP_DAYS = 0.5      # Don't predict events within 12h
 PREDICTION_WINDOW_DAYS = 2.0   # Predict septic shock within 2 days after gap
-LOOKBACK_DAYS = 7.0            # Use 7 days of historical data for features
+LOOKBACK_DAYS = 3.0            # Use 3 days of historical data for features
 MIN_LACTATE_MEASUREMENTS = 3   # Minimum lactate measurements required
-OUTPUT_PATH = 'results/eicu/sepsis/sepsis_prediction_dataset.csv'
+OUTPUT_PATH = '/home/gaga/data/physionet/eicu/sepsis/sepsis_prediction_dataset.csv'
 
 MAX_PATIENTS = None            # Process full cohort
 
@@ -390,7 +390,7 @@ final_stay_ids = prediction_dataset['stay_id'].unique()
 for biomarker, ts_df in [('lactate', lactate_ts), ('wbc', wbc_ts), ('platelets', platelet_ts)]:
     ts_filtered = ts_df[ts_df['stay_id'].isin(final_stay_ids)].copy()
     ts_filtered['time_day'] = ts_filtered['time_days'].astype(int)
-    ts_output = f'results/eicu/sepsis/{biomarker}_timeseries.csv'
+    ts_output = f'/home/gaga/data/physionet/eicu/sepsis/{biomarker}_timeseries.csv'
     os.makedirs(os.path.dirname(ts_output), exist_ok=True)
     ts_filtered.to_csv(ts_output, index=False)
     print(f"  ✓ Saved {biomarker}: {len(ts_filtered):,} measurements for {len(final_stay_ids):,} patients")

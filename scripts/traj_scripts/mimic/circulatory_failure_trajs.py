@@ -2,10 +2,10 @@
 Compute biomarker trajectory probabilities for the MIMIC circulatory failure cohort.
 
 Usage (examples):
-    python circulatory_failure_trajs.py --biomarker lactate  --input results/mimic/circulatory_failure/lactate_timeseries.csv  --pred-dataset results/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv --output results/mimic/circulatory_failure/lactate_trajectory_probs_bayes.csv
-    python circulatory_failure_trajs.py --biomarker heartrate --input results/mimic/circulatory_failure/heartrate_timeseries.csv --pred-dataset results/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv --output results/mimic/circulatory_failure/heartrate_trajectory_probs_bayes.csv
-    python circulatory_failure_trajs.py --biomarker systolic --input results/mimic/circulatory_failure/systolic_timeseries.csv --pred-dataset results/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv --output results/mimic/circulatory_failure/systolic_trajectory_probs_bayes.csv
-    python circulatory_failure_trajs.py --biomarker all --data-dir results/mimic/circulatory_failure --pred-dataset results/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv
+    python circulatory_failure_trajs.py --biomarker lactate  --input /home/gaga/data/physionet/mimic/circulatory_failure/lactate_timeseries.csv  --pred-dataset /home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv --output /home/gaga/data/physionet/mimic/circulatory_failure/lactate_trajectory_probs_bayes.csv
+    python circulatory_failure_trajs.py --biomarker heartrate --input /home/gaga/data/physionet/mimic/circulatory_failure/heartrate_timeseries.csv --pred-dataset /home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv --output /home/gaga/data/physionet/mimic/circulatory_failure/heartrate_trajectory_probs_bayes.csv
+    python circulatory_failure_trajs.py --biomarker systolic --input /home/gaga/data/physionet/mimic/circulatory_failure/systolic_timeseries.csv --pred-dataset /home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv --output /home/gaga/data/physionet/mimic/circulatory_failure/systolic_trajectory_probs_bayes.csv
+    python circulatory_failure_trajs.py --biomarker all --data-dir /home/gaga/data/physionet/mimic/circulatory_failure --pred-dataset /home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv
 """
 
 import pandas as pd
@@ -255,13 +255,13 @@ def main():
     parser.add_argument('--biomarker', type=str, choices=list(BIOMARKER_CONFIG.keys()) + ['all'], default='lactate',
                         help='Biomarker to model (lactate, heartrate, systolic) or all')
     parser.add_argument('--input', type=str,
-                        default='results/mimic/circulatory_failure/lactate_timeseries.csv',
+                        default='/home/gaga/data/physionet/mimic/circulatory_failure/lactate_timeseries.csv',
                         help='Path to raw biomarker time series CSV (single-biomarker mode)')
     parser.add_argument('--data-dir', type=str,
-                        default='results/mimic/circulatory_failure',
+                        default='/home/gaga/data/physionet/mimic/circulatory_failure',
                         help='Directory containing biomarker time series CSVs (all-biomarker mode)')
     parser.add_argument('--pred-dataset', type=str,
-                        default='results/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv',
+                        default='/home/gaga/data/physionet/mimic/circulatory_failure/circulatory_failure_prediction_dataset.csv',
                         help='Path to prediction dataset for merging')
     parser.add_argument('--output', type=str, default=None,
                         help='Path to save trajectory probabilities (single-biomarker mode)')
@@ -371,7 +371,7 @@ def main():
         return
 
     bm = args.biomarker
-    output_path = Path(args.output) if args.output else Path(f"results/mimic/circulatory_failure/{bm}_trajectory_probs_bayes.csv")
+    output_path = Path(args.output) if args.output else Path(f"/home/gaga/data/physionet/mimic/circulatory_failure/{bm}_trajectory_probs_bayes.csv")
     input_path = Path(args.input)
 
     cohort_patients = None

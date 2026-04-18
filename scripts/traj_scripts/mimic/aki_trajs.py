@@ -90,13 +90,13 @@ def precompile_pytensor_functions(config):
 def main():
     parser = argparse.ArgumentParser(description='Compute MIMIC AKI trajectory probabilities')
     parser.add_argument('--input', type=str,
-                        default='results/mimic/aki/creatinine_timeseries.csv',
+                        default='/home/gaga/data/physionet/mimic/aki/creatinine_timeseries.csv',
                         help='Path to raw creatinine time series CSV')
     parser.add_argument('--pred-dataset', type=str,
-                        default='results/mimic/aki/aki_prediction_dataset.csv',
+                        default='/home/gaga/data/physionet/mimic/aki/aki_prediction_dataset.csv',
                         help='Path to prediction dataset for merging')
     parser.add_argument('--output', type=str,
-                        default='results/mimic/aki/aki_trajectory_probs_bayes.csv',
+                        default='/home/gaga/data/physionet/mimic/aki/aki_trajectory_probs_bayes.csv',
                         help='Path to save trajectory probabilities (time series + probs)')
     parser.add_argument('--merged-output', type=str,
                         default=None,
@@ -311,7 +311,7 @@ def main():
     if args.cohort_splits > 1:
         print("\n💡 To merge all cohorts, run:")
         print(
-            f"   python -c \"import pandas as pd; pd.concat([pd.read_csv('results/mimic/aki/aki_trajectory_probs_cohort{{i:02d}}.csv') for i in range({args.cohort_splits})]).to_csv('results/mimic/aki/aki_trajectory_probs.csv', index=False)\""
+            f"   python -c \"import pandas as pd; pd.concat([pd.read_csv('/home/gaga/data/physionet/mimic/aki/aki_trajectory_probs_cohort{{i:02d}}.csv') for i in range({args.cohort_splits})]).to_csv('/home/gaga/data/physionet/mimic/aki/aki_trajectory_probs.csv', index=False)\""
         )
     print("=" * 80)
 
