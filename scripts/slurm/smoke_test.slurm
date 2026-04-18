@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #SBATCH --job-name=smoke-test
-#SBATCH --output=/home/gaga/tamarw1/trajectory-modeling/logs/outs/smoke_%j.out
-#SBATCH --error=/home/gaga/tamarw1/trajectory-modeling/logs/errs/smoke_%j.err
+#SBATCH --output=logs/outs/smoke_%j.out
+#SBATCH --error=logs/errs/smoke_%j.err
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -11,4 +11,12 @@
 #SBATCH --account=gpu-research
 #SBATCH --partition=gpu-shamir
 
-pytest -q /home/gaga/tamarw1/trajectory-modeling/tests/test_smoke_backends.py -s
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$SCRIPT_DIR}"
+while [[ ! -f "$REPO_ROOT/pyproject.toml" && "$REPO_ROOT" != "/" ]]; do
+	REPO_ROOT="$(dirname "$REPO_ROOT")"
+done
+[[ -f "$REPO_ROOT/pyproject.toml" ]] || { echo "Could not locate repo root"; exit 1; }
+
+cd "$REPO_ROOT" || exit 1
+pytest -q "$REPO_ROOT/tests/test_smoke_backends.py" -s

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # -------- Config --------
-WORKDIR="/home/gaga/tamarw1/trajectory-modeling"
+WORKDIR="${WORKDIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 PYTHON_BIN="python"  # change to full path if needed
 SCRIPT_PATH="$WORKDIR/scripts/analysis/mimic/mimic_circulatory_failure_analysis.py"
 BASE_DIR="/home/gaga/data/physionet/mimic/circulatory_failure"

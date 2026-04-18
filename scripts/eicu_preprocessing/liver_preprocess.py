@@ -30,7 +30,7 @@ from tqdm import tqdm
 # Configuration
 PREDICTION_GAP_DAYS = 1.0      # Don't predict events within 1 day
 PREDICTION_WINDOW_DAYS = 5.0   # Predict ACLF within 5 days after gap
-LOOKBACK_DAYS = 7.0            # Use 7 days of historical data for features
+LOOKBACK_DAYS = 5.0            # Use 5 days of historical data for features
 MIN_BILI_MEASUREMENTS = 3      # Minimum bilirubin measurements required
 OUTPUT_PATH = '/home/gaga/data/physionet/eicu/liver/liver_prediction_dataset.csv'
 

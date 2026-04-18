@@ -97,6 +97,13 @@ class AnalysisConfig:
     OOF_SCOPE: str = "top-k"  # one of: all, top-k, representative-k
     OOF_K: int = 10
     PLOT_K: int = 10
+    # Runtime bootstrap trajectory generation (used when bootstrap files are absent)
+    COMPUTE_BOOTSTRAP_TRAJ: bool = True
+    BOOTSTRAP_N: int = 200
+    BOOTSTRAP_N_JOBS: int = 4
+    # If True, treat legacy "*_with_probs" and standalone "*trajectory_probs*"
+    # files as bootstrap trajectory sources and suffix trajectory columns with `_boot`.
+    WITH_PROBS_IS_BOOTSTRAP: bool = False
     
     def __post_init__(self):
         if not self.DATASET or not self.TASK:
@@ -166,8 +173,13 @@ class TrajectoryAnalysis:
         if dataset is None:
             raise FileNotFoundError(f"Could not load prediction dataset. Tried: {pred_stems}")
 
+        force_with_probs_bootstrap = bool(getattr(self.config, "WITH_PROBS_IS_BOOTSTRAP", False))
+
         def _is_bootstrap_source(stem: str) -> bool:
-            return "bootstrap" in stem.lower()
+            stem_l = stem.lower()
+            return ("bootstrap" in stem_l) or (
+                force_with_probs_bootstrap and stem_l.endswith("_with_probs")
+            )
 
         # Augment with additional trajectory representations (Bayesian / Bootstrap)
         # when available as separate files.
@@ -249,7 +261,9 @@ class TrajectoryAnalysis:
             if missing_keys:
                 continue
 
-            if "bootstrap" in p.name.lower():
+            if "bootstrap" in p.name.lower() or (
+                force_with_probs_bootstrap and "trajectory_probs" in p.name.lower()
+            ):
                 tdf = _suffix_bootstrap_cols(tdf)
 
             traj_cols = _traj_cols(tdf)
@@ -291,6 +305,137 @@ class TrajectoryAnalysis:
                 logger.info(f"  Outcome rate: {dataset[self.config.TARGET_COL].mean():.1%}")
         
         return dataset
+
+    def _compute_or_load_bootstrap_trajectory(
+        self,
+        ts_df: pd.DataFrame,
+        biomarker: str,
+        bio_config: dict,
+        lookback_value: float,
+    ) -> Optional[pd.DataFrame]:
+        """Load cached bootstrap trajectory probs or compute them from timeseries."""
+        if not getattr(self.config, "COMPUTE_BOOTSTRAP_TRAJ", True):
+            return None
+
+        value_col = str(bio_config.get("value_col", biomarker))
+        ts_file = str(bio_config.get("file", f"{biomarker}_timeseries.csv"))
+        ts_stem = Path(ts_file).stem
+        if ts_stem.endswith("_timeseries"):
+            ts_stem = ts_stem[:-len("_timeseries")]
+
+        boot_cfg = (bio_config.get("bootstrap") or {}).copy()
+        output_name = boot_cfg.get("output_file", f"{ts_stem}_trajectory_probs_bootstrap.csv")
+        output_path = self.base_dir / output_name
+
+        id_col_ts = pick_id_col(ts_df)
+        time_col_ts, windowing_col_ts = pick_time_cols(ts_df)
+
+        marker_token = value_col.lower().replace(" ", "_")
+        dst_cols = [
+            f"{marker_token}_stable_boot",
+            f"{marker_token}_gradual_boot",
+            f"{marker_token}_rapid_boot",
+        ]
+
+        if output_path.exists():
+            try:
+                boot_df = pd.read_csv(output_path)
+                if id_col_ts in boot_df.columns and windowing_col_ts in boot_df.columns and all(c in boot_df.columns for c in dst_cols):
+                    return boot_df[[id_col_ts, windowing_col_ts] + dst_cols].copy()
+            except Exception:
+                pass
+
+        try:
+            from traj_features.backends.bootstrap import BootstrapTrajPS, BootstrapConfig
+            from traj_features.backends.bayes.classify import flags_from_traj, pos_flags_from_traj
+        except Exception as e:
+            logger.warning(f"    Bootstrap backend unavailable for {biomarker}: {e}")
+            return None
+
+        class_mode = str(boot_cfg.get("class_func", "auto")).lower()
+        if class_mode in {"pos", "positive", "increase", "increasing"}:
+            class_func = pos_flags_from_traj
+            default_traj_types = ("stable", "gradual_increase", "rapid_increase")
+        elif class_mode in {"neg", "negative", "decline", "decrease", "decreasing"}:
+            class_func = flags_from_traj
+            default_traj_types = ("stable", "gradual_decline", "rapid_decline")
+        else:
+            # Heuristic: platelets commonly modeled as declining trajectory for worsening.
+            if "platelet" in marker_token:
+                class_func = flags_from_traj
+                default_traj_types = ("stable", "gradual_decline", "rapid_decline")
+            else:
+                class_func = pos_flags_from_traj
+                default_traj_types = ("stable", "gradual_increase", "rapid_increase")
+
+        traj_types = tuple(boot_cfg.get("traj_types", default_traj_types))
+        label_map = boot_cfg.get(
+            "label_map",
+            {
+                "nonprogression": traj_types[0],
+                "linear": traj_types[1],
+                "nonlinear": traj_types[2],
+            },
+        )
+
+        traj_input = ts_df[[id_col_ts, time_col_ts, windowing_col_ts, value_col]].copy()
+        traj_input = traj_input.rename(
+            columns={
+                id_col_ts: "patientid",
+                time_col_ts: "time",
+                windowing_col_ts: "time_window",
+                value_col: "lab_value",
+            }
+        )
+        traj_input = traj_input.dropna(subset=["lab_value", "time", "time_window"]).sort_values(["patientid", "time"])
+
+        if traj_input.empty:
+            return None
+
+        logger.info(f"    Computing bootstrap trajectories ({biomarker})...")
+        model = BootstrapTrajPS(
+            BootstrapConfig(
+                window_years=float(boot_cfg.get("window", lookback_value)),
+                n_bootstrap=int(boot_cfg.get("n_bootstrap", getattr(self.config, "BOOTSTRAP_N", 200))),
+                flat_thr=float(boot_cfg.get("flat_thr", 0.1)),
+                decline_thr=float(boot_cfg.get("decline_thr", 0.3)),
+                nonlinear_gap=float(boot_cfg.get("nonlinear_gap", 0.5)),
+                class_func=class_func,
+                traj_types=traj_types,
+                label_map=label_map,
+                pids="patientid",
+                values="lab_value",
+                time_col="time",
+                windowing_col="time_window",
+                n_jobs=int(boot_cfg.get("n_jobs", getattr(self.config, "BOOTSTRAP_N_JOBS", 4))),
+                progressbar=False,
+            )
+        )
+
+        boot_df = model.embed(traj_input)
+        if boot_df.empty:
+            return None
+
+        rename_map = {
+            f"trajtype_{traj_types[0]}_prob": dst_cols[0],
+            f"trajtype_{traj_types[1]}_prob": dst_cols[1],
+            f"trajtype_{traj_types[2]}_prob": dst_cols[2],
+        }
+        for src in rename_map:
+            if src not in boot_df.columns:
+                boot_df[src] = np.nan
+
+        boot_df = boot_df.rename(columns={"patientid": id_col_ts, "time_window": windowing_col_ts, **rename_map})
+        boot_df = boot_df[[id_col_ts, windowing_col_ts] + dst_cols].copy()
+        boot_df = boot_df.drop_duplicates(subset=[id_col_ts, windowing_col_ts], keep="last")
+
+        try:
+            boot_df.to_csv(output_path, index=False)
+            logger.info(f"    Cached bootstrap trajectories: {output_path.name}")
+        except Exception as e:
+            logger.warning(f"    Failed to cache bootstrap trajectories for {biomarker}: {e}")
+
+        return boot_df
     
     def prepare_features(self, dataset: pd.DataFrame) -> pd.DataFrame:
         """
@@ -344,6 +489,23 @@ class TrajectoryAnalysis:
                 add_name=f"{biomarker} summary stats",
             )
             logger.info(f"    ✓ Merged: {len(stats_df):,} rows")
+
+            # Compute/load bootstrap trajectory probabilities (notebook-style)
+            boot_df = self._compute_or_load_bootstrap_trajectory(
+                ts_df=ts_df,
+                biomarker=biomarker,
+                bio_config=bio_config,
+                lookback_value=float(lookback_value),
+            )
+            if boot_df is not None and not boot_df.empty:
+                logger.info(f"    Merging bootstrap trajectories ({len(boot_df):,} rows)...")
+                dataset = safe_left_merge(
+                    dataset,
+                    boot_df,
+                    key_cols=[self.id_col, windowing_col],
+                    add_name=f"{biomarker} bootstrap trajectories",
+                )
+                logger.info("    ✓ Added bootstrap trajectory probabilities")
         
         return dataset
     
@@ -393,9 +555,15 @@ class TrajectoryAnalysis:
 
         traj_boot = [c for c in traj_all if c.endswith("_boot") or "_boot" in c]
         traj_bayes = [c for c in traj_all if c not in traj_boot]
-        # Fallback when only one trajectory representation exists
-        if len(traj_bayes) == 0:
-            traj_bayes = traj_all
+
+        # Choose primary trajectory source for non-bootstrap feature families.
+        # If Bayesian columns are absent, use bootstrap trajectories as primary.
+        traj_primary = traj_bayes if len(traj_bayes) > 0 else traj_boot
+        if len(traj_bayes) == 0 and len(traj_boot) > 0:
+            logger.warning(
+                "No Bayesian trajectory columns were found; plain trajectory feature sets "
+                "are using bootstrap columns as the fallback source."
+            )
 
         # Marker-specific subsets (used by sepsis notebook-style comparisons)
         biomarkers_cfg = getattr(self.config, "BIOMARKERS", {}) or {}
@@ -423,7 +591,7 @@ class TrajectoryAnalysis:
                     out.append(c)
             return list(dict.fromkeys(out))
 
-        single_traj_bayes = _subset_for_tokens(traj_bayes, primary_tokens)
+        single_traj_primary = _subset_for_tokens(traj_primary, primary_tokens)
         single_summary = _subset_for_tokens(summary_all, primary_tokens)
         single_traj_boot = _subset_for_tokens(traj_boot, primary_tokens)
 
@@ -431,26 +599,32 @@ class TrajectoryAnalysis:
         if marker_mode not in {"auto", "single-multi", "pooled"}:
             marker_mode = "auto"
 
+        # Sepsis-style single-vs-multi marker framing should be available whenever
+        # multiple biomarkers are configured, even if trajectory columns are absent.
+        task_is_sepsis = str(getattr(self.config, "TASK", "")).lower() == "sepsis"
         can_single_multi = (
             len(biomarker_items) >= 2
-            and len(single_traj_bayes) > 0
-            and len(traj_bayes) > len(single_traj_bayes)
+            and (
+                (len(single_traj_primary) > 0 and len(traj_primary) > len(single_traj_primary))
+                or (len(single_summary) > 0 and len(summary_all) > len(single_summary))
+                or task_is_sepsis
+            )
         )
         use_single_multi = (
             can_single_multi if marker_mode == "auto" else (marker_mode == "single-multi")
         )
 
-        if use_single_multi and len(single_traj_bayes) > 0:
+        if use_single_multi and (len(single_traj_primary) > 0 or len(single_summary) > 0):
             marker_label = (primary_value_col or primary_key or "Single Marker").capitalize()
             feature_configs = {
-                f"{marker_label} Trajectory Only": single_traj_bayes,
-                "Multi-Marker Trajectories": traj_bayes,
+                f"{marker_label} Trajectory Only": single_traj_primary,
+                "Multi-Marker Trajectories": traj_primary,
                 f"{marker_label} Summary Stats Only": single_summary,
                 "Multi-Marker Summary Stats": summary_all,
-                f"{marker_label} Trajectory + Summary Stats": single_traj_bayes + single_summary,
-                "Multi-Marker Trajectories + Summary Stats": traj_bayes + summary_all,
-                f"Static + {marker_label} Trajectory": static_all + single_traj_bayes,
-                "Static + Multi-Marker Trajectories": static_all + traj_bayes,
+                f"{marker_label} Trajectory + Summary Stats": single_traj_primary + single_summary,
+                "Multi-Marker Trajectories + Summary Stats": traj_primary + summary_all,
+                f"Static + {marker_label} Trajectory": static_all + single_traj_primary,
+                "Static + Multi-Marker Trajectories": static_all + traj_primary,
                 f"Static + {marker_label} Summary Stats": static_all + single_summary,
                 "Static + Multi-Marker Summary Stats": static_all + summary_all,
             }
@@ -458,12 +632,12 @@ class TrajectoryAnalysis:
                 feature_configs.update(
                     {
                         "Static + Dynamic": static_dynamic,
-                        f"Static + Dynamic + {marker_label} Trajectory": static_dynamic + single_traj_bayes,
-                        "Static + Dynamic + Multi-Marker Trajectories": static_dynamic + traj_bayes,
+                        f"Static + Dynamic + {marker_label} Trajectory": static_dynamic + single_traj_primary,
+                        "Static + Dynamic + Multi-Marker Trajectories": static_dynamic + traj_primary,
                         f"Static + Dynamic + {marker_label} Summary Stats": static_dynamic + single_summary,
                         "Static + Dynamic + Multi-Marker Summary Stats": static_dynamic + summary_all,
-                        f"Static + Dynamic + {marker_label} Trajectory + Summary Stats": static_dynamic + single_traj_bayes + single_summary,
-                        "Static + Dynamic + Multi-Marker Trajectories + Summary Stats": static_dynamic + traj_bayes + summary_all,
+                        f"Static + Dynamic + {marker_label} Trajectory + Summary Stats": static_dynamic + single_traj_primary + single_summary,
+                        "Static + Dynamic + Multi-Marker Trajectories + Summary Stats": static_dynamic + traj_primary + summary_all,
                     }
                 )
 
@@ -489,21 +663,21 @@ class TrajectoryAnalysis:
                     )
         else:
             feature_configs = {
-                "Trajectory Only": traj_bayes,
+                "Trajectory Only": traj_primary,
                 "Summary Stats Only": summary_all,
-                "Trajectory + Summary Stats": traj_bayes + summary_all,
-                "Trajectory + Static": traj_bayes + static_all,
+                "Trajectory + Summary Stats": traj_primary + summary_all,
+                "Trajectory + Static": traj_primary + static_all,
                 "Summary Stats + Static": summary_all + static_all,
-                "Trajectory + Summary Stats + Static": traj_bayes + summary_all + static_all,
+                "Trajectory + Summary Stats + Static": traj_primary + summary_all + static_all,
             }
 
             if len(static_dynamic) > 0:
                 feature_configs.update(
                     {
                         "Static + Dynamic": static_dynamic,
-                        "Trajectory + Static + Dynamic": traj_bayes + static_dynamic,
+                        "Trajectory + Static + Dynamic": traj_primary + static_dynamic,
                         "Summary Stats + Static + Dynamic": summary_all + static_dynamic,
-                        "Trajectory + Summary Stats + Static + Dynamic": traj_bayes + summary_all + static_dynamic,
+                        "Trajectory + Summary Stats + Static + Dynamic": traj_primary + summary_all + static_dynamic,
                     }
                 )
 
@@ -595,6 +769,9 @@ class TrajectoryAnalysis:
             X_te = scaler.transform(X_te)
 
             est = clone(model)
+            if model_name == "XGBoost":
+                est.set_params(scale_pos_weight=(len(y_train) - y_train.sum()) / max(1, y_train.sum()))
+                
             if n_jobs != 1 and hasattr(est, "get_params"):
                 params = est.get_params(deep=False)
                 if "n_jobs" in params:
@@ -791,6 +968,7 @@ class TrajectoryAnalysis:
             "lookback_window": float(getattr(self.config, "LOOKBACK_WINDOW", getattr(self.config, "LOOKAHEAD_HOURS", 12))),
             "lookback_unit": str(getattr(self.config, "LOOKBACK_UNIT", "hours")),
             "marker_mode": str(getattr(self.config, "MARKER_MODE", "auto")),
+            "with_probs_is_bootstrap": bool(getattr(self.config, "WITH_PROBS_IS_BOOTSTRAP", False)),
             "save_oof": bool(getattr(self.config, "SAVE_OOF", True)),
             "oof_scope": str(getattr(self.config, "OOF_SCOPE", "top-k")),
             "oof_k": int(getattr(self.config, "OOF_K", 10)),
@@ -801,6 +979,11 @@ class TrajectoryAnalysis:
                     "columns": cols,
                 }
                 for name, cols in feature_configs.items()
+            },
+            "trajectory_source": {
+                "bayesian_columns": int(len(traj_bayes)),
+                "bootstrap_columns": int(len(traj_boot)),
+                "primary_source": "bayesian" if len(traj_bayes) > 0 else "bootstrap",
             },
         }
 
@@ -1042,6 +1225,17 @@ def main_cli(
         default=None,
         help="Feature-set mode: auto (default), single-multi, or pooled.",
     )
+    parser.add_argument(
+        "--with-probs-source",
+        type=str,
+        choices=["default", "bootstrap", "bayesian"],
+        default="default",
+        help=(
+            "Interpretation of *_with_probs and standalone *trajectory_probs* files: "
+            "default=use config, bootstrap=treat as bootstrap and suffix with _boot, "
+            "bayesian=treat as non-bootstrap."
+        ),
+    )
     
     # Parallelization
     parser.add_argument(
@@ -1053,9 +1247,13 @@ def main_cli(
     parser.add_argument(
         "--train-backend",
         type=str,
-        choices=["threading", "processes"],
+        choices=["threading", "loky", "multiprocessing", "sequential", "processes"],
         default="threading",
-        help="Joblib backend for CV parallelization (default: threading)",
+        help=(
+            "Joblib backend for CV parallelization "
+            "(threading, loky, multiprocessing, sequential). "
+            "'processes' is accepted as alias for 'loky'."
+        ),
     )
     parser.add_argument(
         "--parallel-axis",
@@ -1127,6 +1325,10 @@ def main_cli(
         config.LOOKBACK_UNIT = args.lookback_unit
     if args.marker_mode is not None:
         config.MARKER_MODE = args.marker_mode
+    if args.with_probs_source == "bootstrap":
+        config.WITH_PROBS_IS_BOOTSTRAP = True
+    elif args.with_probs_source == "bayesian":
+        config.WITH_PROBS_IS_BOOTSTRAP = False
     if args.parallel_axis is not None:
         config.PARALLEL_AXIS = args.parallel_axis
     if args.no_save_oof:
@@ -1142,6 +1344,7 @@ def main_cli(
     
     # Run analysis
     try:
+        train_backend = "loky" if args.train_backend == "processes" else args.train_backend
         analysis = TrajectoryAnalysis(config, base_dir, output_dir)
         dataset = analysis.load_data()
         dataset = analysis.prepare_features(dataset)
@@ -1150,7 +1353,7 @@ def main_cli(
             n_repeats=config.CV_N_REPEATS,
             n_splits=config.CV_N_SPLITS,
             n_jobs=args.train_n_jobs,
-            backend=args.train_backend,
+            backend=train_backend,
             parallel_axis=getattr(config, "PARALLEL_AXIS", "repeat"),
         )
         analysis.save_results(results)

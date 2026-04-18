@@ -25,6 +25,19 @@ class MIMICLiverConfig(AnalysisConfig):
         "bilirubin": {
             "file": "bilirubin_timeseries.csv",
             "value_col": "bilirubin",
+            "bootstrap": {
+                "class_func": "pos",
+                "flat_thr": 0.5,
+                "decline_thr": 1.0,
+                "nonlinear_gap": 3.0,
+                "traj_types": ("prolonged_nonprogression", "linear_decline", "nonlinear"),
+                "label_map": {
+                    "nonprogression": "prolonged_nonprogression",
+                    "linear": "linear_decline",
+                    "nonlinear": "nonlinear",
+                },
+                "window": 5.0,
+            },
         },
     }
     

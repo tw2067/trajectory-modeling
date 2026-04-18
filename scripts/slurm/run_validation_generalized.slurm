@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #SBATCH --job-name=traj_validate_parkinsons
-#SBATCH --output=/home/gaga/tamarw1/trajectory-modeling/logs/outs/generalized/validate_%A_%a.out
-#SBATCH --error=/home/gaga/tamarw1/trajectory-modeling/logs/errs/generalized/validate_%A_%a.err
+#SBATCH --output=logs/outs/generalized/validate_%A_%a.out
+#SBATCH --error=logs/errs/generalized/validate_%A_%a.err
 #SBATCH --time=12:00:00
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=64G
@@ -40,8 +40,16 @@ echo "Disease:         $DISEASE"
 echo "========================================================================"
 echo ""
 
-# Navigate to project directory
-cd /home/gaga/tamarw1/trajectory-modeling || exit 1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$SCRIPT_DIR}"
+while [[ ! -f "$REPO_ROOT/pyproject.toml" && "$REPO_ROOT" != "/" ]]; do
+    REPO_ROOT="$(dirname "$REPO_ROOT")"
+done
+[[ -f "$REPO_ROOT/pyproject.toml" ]] || { echo "Could not locate repo root"; exit 1; }
+
+LOG_ROOT="${LOG_ROOT:-$REPO_ROOT/logs}"
+mkdir -p "$LOG_ROOT/outs/generalized" "$LOG_ROOT/errs/generalized"
+cd "$REPO_ROOT" || exit 1
 
 # Set number of threads to match SLURM allocation
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK

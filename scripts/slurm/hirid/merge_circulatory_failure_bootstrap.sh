@@ -1,10 +1,11 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Merge bootstrap trajectory cohort files for HiRiD circulatory failure
 # Run after all SLURM array jobs complete
 
 set -euo pipefail
 
-DATA_DIR="/home/gaga/data/physionet/hirid/circulatory_failure"
+DATA_ROOT="${DATA_ROOT:-/home/gaga/data/physionet}"
+DATA_DIR="${DATA_ROOT}/hirid/circulatory_failure"
 N_COHORTS=5
 
 echo "Merging HiRiD Circulatory Failure Bootstrap trajectory files..."
@@ -12,8 +13,9 @@ echo "Merging HiRiD Circulatory Failure Bootstrap trajectory files..."
 python - <<'PY'
 from pathlib import Path
 import pandas as pd
+import os
 
-data_dir = Path("/home/gaga/data/physionet/hirid/circulatory_failure")
+data_dir = Path(os.environ.get("DATA_ROOT", "/home/gaga/data/physionet")) / "hirid" / "circulatory_failure"
 n_cohorts = 5
 
 def merge_base(base_name: str):

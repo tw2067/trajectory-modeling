@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WORKDIR="/home/gaga/tamarw1/trajectory-modeling"
+WORKDIR="${WORKDIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 PYTHON_BIN="python"
 SCRIPT_PATH="$WORKDIR/scripts/analysis/hirid/hirid_circulatory_failure_analysis.py"
 BASE_DIR="/home/gaga/data/physionet/hirid/circulatory_failure"

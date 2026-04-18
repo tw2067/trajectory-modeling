@@ -25,10 +25,36 @@ class HiRiDVentilatorConfig(AnalysisConfig):
         "pao2": {
             "file": "pao2_timeseries.csv",
             "value_col": "pao2",
+            "bootstrap": {
+                "class_func": "pos",
+                "flat_thr": 10.0,
+                "decline_thr": 30.0,
+                "nonlinear_gap": 20.0,
+                "traj_types": ("prolonged_nonprogression", "linear_decline", "nonlinear"),
+                "label_map": {
+                    "nonprogression": "prolonged_nonprogression",
+                    "linear": "linear_decline",
+                    "nonlinear": "nonlinear",
+                },
+                "window": 24.0,
+            },
         },
         "peep": {
             "file": "peep_timeseries.csv",
             "value_col": "peep",
+            "bootstrap": {
+                "class_func": "pos",
+                "flat_thr": 10.0,
+                "decline_thr": 30.0,
+                "nonlinear_gap": 20.0,
+                "traj_types": ("prolonged_nonprogression", "linear_decline", "nonlinear"),
+                "label_map": {
+                    "nonprogression": "prolonged_nonprogression",
+                    "linear": "linear_decline",
+                    "nonlinear": "nonlinear",
+                },
+                "window": 24.0,
+            },
         },
     }
     

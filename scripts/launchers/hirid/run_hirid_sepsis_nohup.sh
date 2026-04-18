@@ -1,8 +1,10 @@
 #!/bin/bash
 # Launch Hirid Sepsis Analysis via nohup
-# Usage: ./scripts/run_hirid_sepsis_nohup.sh [--train-n-jobs N] [--train-backend threading|processes] [--parallel-axis repeat|feature-set] [--save-oof|--no-save-oof]
+# Usage: ./scripts/launchers/hirid/run_hirid_sepsis_nohup.sh [--train-n-jobs N] [--train-backend threading|processes] [--parallel-axis repeat|feature-set] [--save-oof|--no-save-oof]
 
-cd /home/gaga/tamarw1/trajectory-modeling || exit 1
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+
+cd "$REPO_ROOT" || exit 1
 
 TRAIN_N_JOBS=${TRAIN_N_JOBS:-1}
 TRAIN_BACKEND=${TRAIN_BACKEND:-threading}
@@ -11,6 +13,7 @@ OOF_SCOPE=${OOF_SCOPE:-representative-k}
 OOF_K=${OOF_K:-10}
 PLOT_K=${PLOT_K:-10}
 SAVE_OOF=${SAVE_OOF:-0}
+WITH_PROBS_SOURCE=${WITH_PROBS_SOURCE:-default}
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -39,6 +42,10 @@ while [[ $# -gt 0 ]]; do
             PLOT_K="$2"
             shift 2
             ;;
+        --with-probs-source)
+            WITH_PROBS_SOURCE="$2"
+            shift 2
+            ;;
         --save-oof)
             SAVE_OOF=1
             shift
@@ -61,11 +68,12 @@ echo "  Parallel Axis: $PARALLEL_AXIS"
 echo "  OOF Scope: $OOF_SCOPE"
 echo "  OOF K: $OOF_K"
 echo "  Plot K: $PLOT_K"
+echo "  With Probs Source: $WITH_PROBS_SOURCE"
 echo "  Save OOF: $SAVE_OOF"
 echo "  Start time: $(date)"
 echo ""
 
-mkdir -p logs/outs logs/errs
+mkdir -p logs/outs/hirid logs/errs/hirid
 
 OOF_ARGS=(--oof-scope "$OOF_SCOPE" --oof-k "$OOF_K")
 if [[ "$SAVE_OOF" == "1" ]]; then
@@ -79,13 +87,15 @@ nohup python scripts/analysis/hirid/hirid_sepsis_analysis.py \
     --train-backend "$TRAIN_BACKEND" \
     --parallel-axis "$PARALLEL_AXIS" \
     --plot-k "$PLOT_K" \
+    --with-probs-source "$WITH_PROBS_SOURCE" \
     "${OOF_ARGS[@]}" \
-    > logs/outs/hirid_sepsis_analysis.out 2>&1 &
+    > logs/outs/hirid/hirid_sepsis_analysis.out 2> logs/errs/hirid/hirid_sepsis_analysis.err &
 
 PID=$!
 echo "Process started with PID: $PID"
 echo $PID > .hirid_sepsis_analysis.pid
 
-echo "Output: logs/outs/hirid_sepsis_analysis.out"
-echo "To monitor: tail -f logs/outs/hirid_sepsis_analysis.out"
+echo "Output: logs/outs/hirid/hirid_sepsis_analysis.out"
+echo "Errors: logs/errs/hirid/hirid_sepsis_analysis.err"
+echo "To monitor: tail -f logs/outs/hirid/hirid_sepsis_analysis.out"
 echo "To stop:    kill $PID"

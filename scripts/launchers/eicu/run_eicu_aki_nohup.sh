@@ -1,18 +1,19 @@
 #!/bin/bash
 # Launch Eicu Aki Analysis via nohup
-# Usage: ./scripts/run_eicu_aki_nohup.sh [--train-n-jobs N] [--train-backend threading|processes] [--parallel-axis repeat|feature-set] [--save-oof|--no-save-oof]
+# Usage: ./scripts/launchers/eicu/run_eicu_aki_nohup.sh [--train-n-jobs N] [--train-backend threading|processes] [--parallel-axis repeat|feature-set] [--save-oof|--no-save-oof]
 
-cd /home/gaga/tamarw1/trajectory-modeling || exit 1
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+
+cd "$REPO_ROOT" || exit 1
 
 TRAIN_N_JOBS=${TRAIN_N_JOBS:-1}
 TRAIN_BACKEND=${TRAIN_BACKEND:-threading}
-LOOKBACK_WINDOW=${LOOKBACK_WINDOW:-7}
-LOOKBACK_UNIT=${LOOKBACK_UNIT:-days}
 PARALLEL_AXIS=${PARALLEL_AXIS:-repeat}
 OOF_SCOPE=${OOF_SCOPE:-representative-k}
 OOF_K=${OOF_K:-10}
 PLOT_K=${PLOT_K:-10}
 SAVE_OOF=${SAVE_OOF:-0}
+WITH_PROBS_SOURCE=${WITH_PROBS_SOURCE:-default}
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -23,14 +24,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --train-backend)
             TRAIN_BACKEND="$2"
-            shift 2
-            ;;
-        --lookback-window)
-            LOOKBACK_WINDOW="$2"
-            shift 2
-            ;;
-        --lookback-unit)
-            LOOKBACK_UNIT="$2"
             shift 2
             ;;
         --parallel-axis)
@@ -47,6 +40,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --plot-k)
             PLOT_K="$2"
+            shift 2
+            ;;
+        --with-probs-source)
+            WITH_PROBS_SOURCE="$2"
             shift 2
             ;;
         --save-oof)
@@ -67,17 +64,16 @@ done
 echo "Starting Eicu Aki Analysis (nohup)"
 echo "  Train N-Jobs: $TRAIN_N_JOBS"
 echo "  Train Backend: $TRAIN_BACKEND"
-echo "  Lookback Window: $LOOKBACK_WINDOW"
-echo "  Lookback Unit: $LOOKBACK_UNIT"
 echo "  Parallel Axis: $PARALLEL_AXIS"
 echo "  OOF Scope: $OOF_SCOPE"
 echo "  OOF K: $OOF_K"
 echo "  Plot K: $PLOT_K"
+echo "  With Probs Source: $WITH_PROBS_SOURCE"
 echo "  Save OOF: $SAVE_OOF"
 echo "  Start time: $(date)"
 echo ""
 
-mkdir -p logs/outs logs/errs
+mkdir -p logs/outs/eicu logs/errs/eicu
 
 OOF_ARGS=(--oof-scope "$OOF_SCOPE" --oof-k "$OOF_K")
 if [[ "$SAVE_OOF" == "1" ]]; then
@@ -89,17 +85,17 @@ fi
 nohup python scripts/analysis/eicu/eicu_aki_analysis.py \
     --train-n-jobs "$TRAIN_N_JOBS" \
     --train-backend "$TRAIN_BACKEND" \
-    --lookback-window "$LOOKBACK_WINDOW" \
-    --lookback-unit "$LOOKBACK_UNIT" \
     --parallel-axis "$PARALLEL_AXIS" \
     --plot-k "$PLOT_K" \
+    --with-probs-source "$WITH_PROBS_SOURCE" \
     "${OOF_ARGS[@]}" \
-    > logs/outs/eicu_aki_analysis.out 2>&1 &
+    > logs/outs/eicu/eicu_aki_analysis.out 2> logs/errs/eicu/eicu_aki_analysis.err &
 
 PID=$!
 echo "Process started with PID: $PID"
 echo $PID > .eicu_aki_analysis.pid
 
-echo "Output: logs/outs/eicu_aki_analysis.out"
-echo "To monitor: tail -f logs/outs/eicu_aki_analysis.out"
+echo "Output: logs/outs/eicu/eicu_aki_analysis.out"
+echo "Errors: logs/errs/eicu/eicu_aki_analysis.err"
+echo "To monitor: tail -f logs/outs/eicu/eicu_aki_analysis.out"
 echo "To stop:    kill $PID"

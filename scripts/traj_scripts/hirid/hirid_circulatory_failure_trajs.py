@@ -256,7 +256,18 @@ def _compute_biomarker_probs(spec: BiomarkerSpec, n_batches: int, cohort_patient
 
     df = pd.read_csv(spec.input_path)
 
-    df = df.rename(columns={spec.value_col: spec.value_alias})
+    if spec.value_col not in df.columns:
+        raise KeyError(
+            f"Expected value column '{spec.value_col}' not found in {spec.input_path}. "
+            f"Available columns: {list(df.columns)}"
+        )
+
+    # Keep the original biomarker-specific column while also creating a canonical
+    # value column expected by BayesConfig (`values='lab_value'`).
+    if spec.value_alias != spec.value_col:
+        df = df.rename(columns={spec.value_col: spec.value_alias})
+    df['lab_value'] = df[spec.value_alias]
+
     baseline_name = f"baseline_{spec.value_alias}"
     _coalesce_baseline(df, spec.baseline_candidates, baseline_name)
 

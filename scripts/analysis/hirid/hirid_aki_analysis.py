@@ -25,6 +25,19 @@ class HiRiDAKIConfig(AnalysisConfig):
         "creatinine": {
             "file": "creatinine_timeseries.csv",
             "value_col": "creatinine",
+            "bootstrap": {
+                "class_func": "pos",
+                "flat_thr": 0.1,
+                "decline_thr": 0.3,
+                "nonlinear_gap": 0.5,
+                "traj_types": ("stable", "gradual_increase", "rapid_increase"),
+                "label_map": {
+                    "nonprogression": "stable",
+                    "linear": "gradual_increase",
+                    "nonlinear": "rapid_increase",
+                },
+                "window": 24.0,
+            },
         },
     }
     

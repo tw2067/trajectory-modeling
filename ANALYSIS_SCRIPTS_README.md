@@ -4,7 +4,7 @@ Unified Python scripts for running cross-validated model comparisons across all 
 
 ## Architecture
 
-### Normalized Preprocessing (src/analysis_utils.py)
+### Normalized Preprocessing (src/analysis/analysis_utils.py)
 
 Shared utilities for all tasks:
 - **Column auto-detection**: `pick_id_col()`, `pick_time_cols()`
@@ -15,7 +15,7 @@ Shared utilities for all tasks:
 - **Dataset config**: `get_dataset_config()` (dataset-specific paths & ID columns)
 - **Model utilities**: `get_default_models()` (LogisticRegression, RandomForest, HistGradientBoosting, XGBoost)
 
-### Base Analysis Template (src/analysis_template.py)
+### Base Analysis Template (src/analysis/analysis_template.py)
 
 Provides:
 - `AnalysisConfig`: Configuration class (override DATASET, TASK, BIOMARKERS, TARGET_COL, etc.)
@@ -26,7 +26,7 @@ Provides:
   - `save_results()`: Export to CSV
 - `main_cli()`: Generic CLI entry point with argument parsing
 
-### Task-Specific Scripts (scripts/)
+### Task-Specific Scripts (`scripts/analysis/{dataset}/`)
 
 #### MIMIC (5 tasks)
 - `mimic_circulatory_failure_analysis.py` (existing, already converted)
@@ -57,17 +57,17 @@ Provides:
 cd /home/gaga/tamarw1/trajectory-modeling
 
 # Run with defaults
-python scripts/mimic_sepsis_analysis.py
+python scripts/analysis/mimic/mimic_sepsis_analysis.py
 
 # Run with custom parameters
-python scripts/hirid_liver_analysis.py \
+python scripts/analysis/hirid/hirid_liver_analysis.py \
     --cv-repeats 2 \
     --cv-splits 3 \
     --train-n-jobs 4 \
     --train-backend threads
 
 # Run with custom data directory
-python scripts/eicu_aki_analysis.py \
+python scripts/analysis/eicu/eicu_aki_analysis.py \
     --base-dir /path/to/eicu/aki \
     --output-dir /path/to/results
 ```
@@ -79,16 +79,16 @@ All tasks have auto-generated launcher scripts:
 #### nohup (fire-and-forget)
 ```bash
 # MIMIC Sepsis
-./scripts/run_mimic_sepsis_nohup.sh --train-n-jobs 2
+./scripts/launchers/mimic/run_mimic_sepsis_nohup.sh --train-n-jobs 2
 
 # HiRiD Liver (with parallelization)
-./scripts/run_hirid_liver_nohup.sh --train-n-jobs 4 --train-backend threads
+./scripts/launchers/hirid/run_hirid_liver_nohup.sh --train-n-jobs 4 --train-backend threads
 
 # eICU AKI
-./scripts/run_eicu_aki_nohup.sh
+./scripts/launchers/eicu/run_eicu_aki_nohup.sh
 
 # Monitor output
-tail -f logs/outs/mimic_sepsis_analysis.out
+tail -f logs/outs/mimic/mimic_sepsis_analysis.out
 
 # Check PID
 cat .mimic_sepsis_analysis.pid
@@ -100,7 +100,7 @@ kill $(cat .mimic_sepsis_analysis.pid)
 #### tmux (interactive session)
 ```bash
 # HiRiD Ventilator (parallelized)
-./scripts/run_hirid_ventilator_tmux.sh --train-n-jobs 8 --train-backend processes
+./scripts/launchers/hirid/run_hirid_ventilator_tmux.sh --train-n-jobs 8 --train-backend processes
 
 # Attach to session
 tmux attach -t hirid_ventilator_analysis
@@ -229,7 +229,7 @@ if __name__ == "__main__":
 Ensure `src/` is in PYTHONPATH:
 ```bash
 export PYTHONPATH="/home/gaga/tamarw1/trajectory-modeling/src:$PYTHONPATH"
-python scripts/mimic_sepsis_analysis.py
+python scripts/analysis/mimic/mimic_sepsis_analysis.py
 ```
 
 ### Missing Data Files
@@ -241,13 +241,13 @@ ls -lh /home/gaga/data/physionet/mimic/sepsis/*.csv
 ### Memory Issues
 Reduce `--cv-repeats` or `--cv-splits`:
 ```bash
-python scripts/mimic_sepsis_analysis.py --cv-repeats 2 --cv-splits 3
+python scripts/analysis/mimic/mimic_sepsis_analysis.py --cv-repeats 2 --cv-splits 3
 ```
 
 ### Slow Execution
 Enable parallelization:
 ```bash
-python scripts/hirid_sepsis_analysis.py --train-n-jobs 8 --train-backend threads
+python scripts/analysis/hirid/hirid_sepsis_analysis.py --train-n-jobs 8 --train-backend threads
 ```
 
 ## Validation Checklist
@@ -266,16 +266,14 @@ python scripts/hirid_sepsis_analysis.py --train-n-jobs 8 --train-backend threads
 ```
 trajectory-modeling/
 ├── src/
-│   ├── analysis_utils.py          # Shared preprocessing utilities
-│   ├── analysis_template.py       # Base analysis class + CLI
+│   ├── analysis/
+│   │   ├── analysis_utils.py      # Shared preprocessing utilities
+│   │   └── analysis_template.py   # Base analysis class + CLI
 │   └── traj_features/             # (existing trajectory modeling code)
 ├── scripts/
-│   ├── mimic_*.py                 # 5 MIMIC analysis scripts
-│   ├── hirid_*.py                 # 5 HiRiD analysis scripts
-│   ├── eicu_*.py                  # 5 eICU analysis scripts
-│   ├── run_*_nohup.sh             # 15 nohup launchers
-│   ├── run_*_tmux.sh              # 15 tmux launchers
-│   └── generate_launchers.sh       # Script generator
+│   ├── analysis/                  # dataset-specific analysis scripts
+│   ├── launchers/                 # nohup/tmux launchers by dataset
+│   └── traj_scripts/              # trajectory extraction scripts
 └── results/
     ├── mimic/
     │   ├── circulatory_failure/

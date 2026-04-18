@@ -427,9 +427,9 @@ def get_default_models(include_boosting: bool = True) -> dict:
     from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
     
     models = {
-        "LogisticRegression": LogisticRegression(max_iter=1000, random_state=920),
-        "RandomForest": RandomForestClassifier(n_estimators=100, random_state=920, n_jobs=-1),
-        "HistGradientBoosting": HistGradientBoostingClassifier(random_state=920),
+        "LogisticRegression": LogisticRegression(max_iter=1000, random_state=920 , class_weight="balanced"),
+        "RandomForest": RandomForestClassifier(n_estimators=100, random_state=920, n_jobs=-1, class_weight="balanced"),
+        "HistGradientBoosting": HistGradientBoostingClassifier(random_state=920, class_weight="balanced"),
     }
     
     if include_boosting:
@@ -440,8 +440,6 @@ def get_default_models(include_boosting: bool = True) -> dict:
                 max_depth=6,
                 learning_rate=0.1,
                 random_state=920,
-                tree_method="hist",
-                device="cpu",
             )
         except ImportError:
             pass

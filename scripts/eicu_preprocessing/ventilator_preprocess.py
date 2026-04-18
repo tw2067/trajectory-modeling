@@ -30,7 +30,7 @@ from tqdm import tqdm
 # Configuration
 PREDICTION_GAP_DAYS = 0.5      # Don't predict events within 12h
 PREDICTION_WINDOW_DAYS = 2.0   # Predict weaning success within 2 days after gap
-LOOKBACK_DAYS = 7.0            # Use 7 days of historical data for features
+LOOKBACK_DAYS = 3.0            # Use 3 days of historical data for features
 MIN_PF_MEASUREMENTS = 3        # Minimum P/F ratio measurements required
 OUTPUT_PATH = '/home/gaga/data/physionet/eicu/ventilator/ventilator_prediction_dataset.csv'
 

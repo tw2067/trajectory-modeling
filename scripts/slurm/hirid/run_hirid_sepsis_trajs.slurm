@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #SBATCH --job-name=hirid_sepsis_trajs
-#SBATCH --output=/home/gaga/tamarw1/trajectory-modeling/logs/outs/hirid_sepsis_%j.out
-#SBATCH --error=/home/gaga/tamarw1/trajectory-modeling/logs/errs/hirid_sepsis_%j.err
+#SBATCH --output=logs/outs/hirid_sepsis_%j.out
+#SBATCH --error=logs/errs/hirid_sepsis_%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=128G
@@ -23,13 +23,22 @@ echo "Memory: 128G"
 echo "Start time: $(date)"
 echo ""
 
-# Navigate to script directory
-cd /home/gaga/tamarw1/trajectory-modeling/scripts || exit 1
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$SCRIPT_DIR}"
+while [[ ! -f "$REPO_ROOT/pyproject.toml" && "$REPO_ROOT" != "/" ]]; do
+    REPO_ROOT="$(dirname "$REPO_ROOT")"
+done
+[[ -f "$REPO_ROOT/pyproject.toml" ]] || { echo "Could not locate repo root"; exit 1; }
+
+DATA_ROOT="${DATA_ROOT:-/home/gaga/data/physionet}"
+LOG_ROOT="${LOG_ROOT:-$REPO_ROOT/logs}"
+mkdir -p "$LOG_ROOT/outs" "$LOG_ROOT/errs"
+cd "$REPO_ROOT" || exit 1
 
 # Run trajectory computation for all three biomarkers
-python hirid_sepsis_trajs.py \
-    --input-dir /home/gaga/data/physionet/hirid/sepsis \
-    --output-dir /home/gaga/data/physionet/hirid/sepsis \
+python "$REPO_ROOT/scripts/traj_scripts/hirid/hirid_sepsis_trajs.py" \
+    --input-dir "$DATA_ROOT/hirid/sepsis" \
+    --output-dir "$DATA_ROOT/hirid/sepsis" \
     --window-days 3.0 \
     --n-batches 10 \
     --sampler pymc

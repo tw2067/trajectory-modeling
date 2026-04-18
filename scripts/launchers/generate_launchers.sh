@@ -1,13 +1,14 @@
-#!/bin/bash
-# Generate all launcher scripts for all 15 analysis tasks (5 MIMIC + 5 HiRiD + 5 eICU)
+#!/usr/bin/env bash
+# Generate launcher scripts for analysis tasks
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORKSPACE_ROOT="$(dirname "$SCRIPT_DIR")"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 # Tasks configuration
 declare -A TASK_SCRIPTS=(
     ["mimic_liver"]="mimic_liver_analysis.py"
     ["mimic_aki"]="mimic_aki_analysis.py"
+    ["mimic_sepsis"]="mimic_sepsis_analysis.py"
     ["mimic_ventilator"]="mimic_ventilator_analysis.py"
     ["hirid_sepsis"]="hirid_sepsis_analysis.py"
     ["hirid_liver"]="hirid_liver_analysis.py"
@@ -24,15 +25,21 @@ create_launchers() {
     local task_key=$1
     local script_name=$2
     local task_name=$(echo $task_key | sed 's/_/ /g' | sed 's/^./\U&/g' | sed 's/ ./\U&/g')
+    local dataset=$(echo "$task_key" | cut -d'_' -f1)
+    local target_dir="$SCRIPT_DIR/$dataset"
+
+    mkdir -p "$target_dir"
     
     # Create nohup launcher
-    local nohup_file="$SCRIPT_DIR/run_${task_key}_nohup.sh"
+    local nohup_file="$target_dir/run_${task_key}_nohup.sh"
     cat > "$nohup_file" << 'EOF_NOHUP'
 #!/bin/bash
 # Launch TASK_NAME Analysis via nohup
-# Usage: ./scripts/run_TASK_KEY_nohup.sh [--train-n-jobs N] [--train-backend threading|processes] [--parallel-axis repeat|feature-set] [--save-oof|--no-save-oof]
+# Usage: ./scripts/launchers/TASK_DATASET/run_TASK_KEY_nohup.sh [--train-n-jobs N] [--train-backend threading|processes] [--parallel-axis repeat|feature-set] [--save-oof|--no-save-oof]
 
-cd /home/gaga/tamarw1/trajectory-modeling || exit 1
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+
+cd "$REPO_ROOT" || exit 1
 
 TRAIN_N_JOBS=${TRAIN_N_JOBS:-1}
 TRAIN_BACKEND=${TRAIN_BACKEND:-threading}
@@ -41,6 +48,7 @@ OOF_SCOPE=${OOF_SCOPE:-representative-k}
 OOF_K=${OOF_K:-10}
 PLOT_K=${PLOT_K:-10}
 SAVE_OOF=${SAVE_OOF:-0}
+WITH_PROBS_SOURCE=${WITH_PROBS_SOURCE:-default}
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -67,6 +75,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --plot-k)
             PLOT_K="$2"
+            shift 2
+            ;;
+        --with-probs-source)
+            WITH_PROBS_SOURCE="$2"
             shift 2
             ;;
         --save-oof)
@@ -91,11 +103,12 @@ echo "  Parallel Axis: $PARALLEL_AXIS"
 echo "  OOF Scope: $OOF_SCOPE"
 echo "  OOF K: $OOF_K"
 echo "  Plot K: $PLOT_K"
+echo "  With Probs Source: $WITH_PROBS_SOURCE"
 echo "  Save OOF: $SAVE_OOF"
 echo "  Start time: $(date)"
 echo ""
 
-mkdir -p logs/outs logs/errs
+mkdir -p logs/outs/TASK_DATASET logs/errs/TASK_DATASET
 
 OOF_ARGS=(--oof-scope "$OOF_SCOPE" --oof-k "$OOF_K")
 if [[ "$SAVE_OOF" == "1" ]]; then
@@ -104,35 +117,40 @@ else
     OOF_ARGS+=(--no-save-oof)
 fi
 
-nohup python scripts/SCRIPT_NAME \
+nohup python scripts/analysis/TASK_DATASET/SCRIPT_NAME \
     --train-n-jobs "$TRAIN_N_JOBS" \
     --train-backend "$TRAIN_BACKEND" \
     --parallel-axis "$PARALLEL_AXIS" \
     --plot-k "$PLOT_K" \
+    --with-probs-source "$WITH_PROBS_SOURCE" \
     "${OOF_ARGS[@]}" \
-    > logs/outs/TASK_KEY_analysis.out 2>&1 &
+    > logs/outs/TASK_DATASET/TASK_KEY_analysis.out 2> logs/errs/TASK_DATASET/TASK_KEY_analysis.err &
 
 PID=$!
 echo "Process started with PID: $PID"
 echo $PID > .TASK_KEY_analysis.pid
 
-echo "Output: logs/outs/TASK_KEY_analysis.out"
-echo "To monitor: tail -f logs/outs/TASK_KEY_analysis.out"
+echo "Output: logs/outs/TASK_DATASET/TASK_KEY_analysis.out"
+echo "Errors: logs/errs/TASK_DATASET/TASK_KEY_analysis.err"
+echo "To monitor: tail -f logs/outs/TASK_DATASET/TASK_KEY_analysis.out"
 echo "To stop:    kill $PID"
 EOF_NOHUP
     
     # Replace placeholders
     sed -i "s|TASK_NAME|$task_name|g" "$nohup_file"
     sed -i "s|TASK_KEY|$task_key|g" "$nohup_file"
+    sed -i "s|TASK_DATASET|$dataset|g" "$nohup_file"
     sed -i "s|SCRIPT_NAME|$script_name|g" "$nohup_file"
     chmod +x "$nohup_file"
     
     # Create tmux launcher
-    local tmux_file="$SCRIPT_DIR/run_${task_key}_tmux.sh"
+    local tmux_file="$target_dir/run_${task_key}_tmux.sh"
     cat > "$tmux_file" << 'EOF_TMUX'
 #!/bin/bash
 # Launch TASK_NAME Analysis via tmux
-# Usage: ./scripts/run_TASK_KEY_tmux.sh [--train-n-jobs N] [--train-backend threading|processes] [--parallel-axis repeat|feature-set] [--save-oof|--no-save-oof]
+# Usage: ./scripts/launchers/TASK_DATASET/run_TASK_KEY_tmux.sh [--train-n-jobs N] [--train-backend threading|processes] [--parallel-axis repeat|feature-set] [--save-oof|--no-save-oof]
+
+REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 
 SESSION_NAME="TASK_KEY_analysis"
 TRAIN_N_JOBS=${TRAIN_N_JOBS:-1}
@@ -142,6 +160,7 @@ OOF_SCOPE=${OOF_SCOPE:-representative-k}
 OOF_K=${OOF_K:-10}
 PLOT_K=${PLOT_K:-10}
 SAVE_OOF=${SAVE_OOF:-0}
+WITH_PROBS_SOURCE=${WITH_PROBS_SOURCE:-default}
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -170,6 +189,10 @@ while [[ $# -gt 0 ]]; do
             PLOT_K="$2"
             shift 2
             ;;
+        --with-probs-source)
+            WITH_PROBS_SOURCE="$2"
+            shift 2
+            ;;
         --save-oof)
             SAVE_OOF=1
             shift
@@ -191,7 +214,9 @@ else
     OOF_FLAG="--no-save-oof"
 fi
 
-cd /home/gaga/tamarw1/trajectory-modeling || exit 1
+cd "$REPO_ROOT" || exit 1
+
+mkdir -p logs/outs/TASK_DATASET logs/errs/TASK_DATASET
 
 # Kill existing session if present
 tmux kill-session -t "$SESSION_NAME" 2>/dev/null
@@ -201,7 +226,7 @@ tmux new-session -d -s "$SESSION_NAME" -x 200 -y 50
 
 # Send command
 tmux send-keys -t "$SESSION_NAME" \
-    "cd /home/gaga/tamarw1/trajectory-modeling && python scripts/SCRIPT_NAME --train-n-jobs $TRAIN_N_JOBS --train-backend $TRAIN_BACKEND --parallel-axis $PARALLEL_AXIS --plot-k $PLOT_K --oof-scope $OOF_SCOPE --oof-k $OOF_K $OOF_FLAG" \
+    "cd $REPO_ROOT && python scripts/analysis/TASK_DATASET/SCRIPT_NAME --train-n-jobs $TRAIN_N_JOBS --train-backend $TRAIN_BACKEND --parallel-axis $PARALLEL_AXIS --plot-k $PLOT_K --with-probs-source $WITH_PROBS_SOURCE --oof-scope $OOF_SCOPE --oof-k $OOF_K $OOF_FLAG > logs/outs/TASK_DATASET/TASK_KEY_analysis.out 2> logs/errs/TASK_DATASET/TASK_KEY_analysis.err" \
     Enter
 
 echo "✓ tmux session created: $SESSION_NAME"
@@ -211,7 +236,10 @@ echo "  Parallel Axis: $PARALLEL_AXIS"
 echo "  OOF Scope: $OOF_SCOPE"
 echo "  OOF K: $OOF_K"
 echo "  Plot K: $PLOT_K"
+echo "  With Probs Source: $WITH_PROBS_SOURCE"
 echo "  Save OOF: $SAVE_OOF"
+echo "  Output log: logs/outs/TASK_DATASET/TASK_KEY_analysis.out"
+echo "  Error log: logs/errs/TASK_DATASET/TASK_KEY_analysis.err"
 echo ""
 echo "Attach: tmux attach -t $SESSION_NAME"
 echo "List sessions: tmux list-sessions"
@@ -221,6 +249,7 @@ EOF_TMUX
     # Replace placeholders
     sed -i "s|TASK_NAME|$task_name|g" "$tmux_file"
     sed -i "s|TASK_KEY|$task_key|g" "$tmux_file"
+    sed -i "s|TASK_DATASET|$dataset|g" "$tmux_file"
     sed -i "s|SCRIPT_NAME|$script_name|g" "$tmux_file"
     chmod +x "$tmux_file"
     
@@ -234,8 +263,8 @@ for task_key in "${!TASK_SCRIPTS[@]}"; do
 done
 
 echo ""
-echo "✓ All launcher scripts generated in $SCRIPT_DIR"
+echo "✓ All launcher scripts generated in dataset-specific folders under $SCRIPT_DIR"
 echo ""
 echo "Examples:"
-echo "  nohup:  ./scripts/run_mimic_liver_nohup.sh --train-n-jobs 2"
-echo "  tmux:   ./scripts/run_hirid_sepsis_tmux.sh --train-n-jobs 4 --train-backend threads"
+echo "  nohup:  ./scripts/launchers/mimic/run_mimic_liver_nohup.sh --train-n-jobs 2"
+echo "  tmux:   ./scripts/launchers/hirid/run_hirid_sepsis_tmux.sh --train-n-jobs 4 --train-backend threads"

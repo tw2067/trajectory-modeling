@@ -25,6 +25,19 @@ class MIMICVentilatorConfig(AnalysisConfig):
         "pf_ratio": {
             "file": "pf_ratio_timeseries.csv",
             "value_col": "pf_ratio",
+            "bootstrap": {
+                "class_func": "pos",
+                "flat_thr": 10.0,
+                "decline_thr": 30.0,
+                "nonlinear_gap": 20.0,
+                "traj_types": ("prolonged_nonprogression", "linear_decline", "nonlinear"),
+                "label_map": {
+                    "nonprogression": "prolonged_nonprogression",
+                    "linear": "linear_decline",
+                    "nonlinear": "nonlinear",
+                },
+                "window": 3.0,
+            },
         },
     }
     
