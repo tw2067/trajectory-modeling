@@ -35,7 +35,7 @@ echo "(lactate, WBC, platelets) and automatically merges them with the predictio
 echo ""
 
 # Run unified trajectory computation
-python "$REPO_ROOT/scripts/traj_scripts/eicu/sepsis_all_biomarkers.py" \
+python "$REPO_ROOT/scripts/trajectory/eicu/sepsis_all_biomarkers.py" \
     --data-dir "$DATA_ROOT/eicu/sepsis" \
     --pred-dataset "$DATA_ROOT/eicu/sepsis/sepsis_prediction_dataset.csv" \
     --output "$DATA_ROOT/eicu/sepsis/sepsis_trajectory_probs.csv" \

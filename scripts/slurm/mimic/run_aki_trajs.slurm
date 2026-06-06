@@ -10,7 +10,7 @@
 
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="${REPO_ROOT:-$SCRIPT_DIR}"
+REPO_ROOT="${REPO_ROOT:-${SLURM_SUBMIT_DIR:-$SCRIPT_DIR}}"
 while [[ ! -f "$REPO_ROOT/pyproject.toml" && "$REPO_ROOT" != "/" ]]; do
 	REPO_ROOT="$(dirname "$REPO_ROOT")"
 done
@@ -33,7 +33,7 @@ COHORT_INDEX=${SLURM_ARRAY_TASK_ID}
 echo "Starting MIMIC AKI TRAJS run at $(date)"
 echo ""
 
-python "$REPO_ROOT/scripts/traj_scripts/mimic/aki_trajs.py" \
+python "$REPO_ROOT/scripts/trajectory/mimic/aki_trajs.py" \
 	--input "$DATA_ROOT/mimic/aki/creatinine_timeseries.csv" \
 	--pred-dataset "$DATA_ROOT/mimic/aki/aki_prediction_dataset.csv" \
 	--output "$DATA_ROOT/mimic/aki/aki_trajectory_probs_bayes.csv" \
@@ -47,4 +47,8 @@ echo ""
 echo "MIMIC AKI TRAJS run completed at $(date) with exit code $EXIT_CODE"
 
 # Exit with the same code as the Python script
+if [ -f "$REPO_ROOT/scripts/slurm/cleanup_pytensor_cache.sh" ]; then
+	bash "$REPO_ROOT/scripts/slurm/cleanup_pytensor_cache.sh" || true
+fi
+
 exit $EXIT_CODE

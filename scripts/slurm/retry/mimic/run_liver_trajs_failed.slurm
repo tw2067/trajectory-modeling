@@ -34,7 +34,7 @@ COHORT_INDEX=${SLURM_ARRAY_TASK_ID}
 echo "Starting MIMIC LIVER TRAJS retry run at $(date)"
 echo ""
 
-python "$REPO_ROOT/scripts/traj_scripts/mimic/liver_trajs.py" \
+python "$REPO_ROOT/scripts/trajectory/mimic/liver_trajs.py" \
 	--input "$DATA_ROOT/mimic/liver/bilirubin_timeseries.csv" \
 	--pred-dataset "$DATA_ROOT/mimic/liver/liver_prediction_dataset.csv" \
 	--output "$DATA_ROOT/mimic/liver/bili_trajectory_probs_bayes.csv" \
@@ -46,6 +46,11 @@ EXIT_CODE=$?
 
 echo ""
 echo "MIMIC LIVER TRAJS retry run completed at $(date) with exit code $EXIT_CODE"
+
+# Attempt to clean PyTensor cache for this job (best-effort)
+if [ -f "$REPO_ROOT/scripts/slurm/cleanup_pytensor_cache.sh" ]; then
+	bash "$REPO_ROOT/scripts/slurm/cleanup_pytensor_cache.sh" || true
+fi
 
 # Exit with the same code as the Python script
 exit $EXIT_CODE

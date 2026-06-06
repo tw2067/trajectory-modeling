@@ -10,10 +10,10 @@ This script:
 Default: runs for mimic + eicu + hirid, with 1500 patients each.
 
 Example:
-    python scripts/traj_scripts/run_circulatory_failure_bayes_subset.py
+    python scripts/trajectory/run_circulatory_failure_bayes_subset.py
 
 Custom example:
-    python scripts/traj_scripts/run_circulatory_failure_bayes_subset.py \
+    python scripts/trajectory/run_circulatory_failure_bayes_subset.py \
       --datasets mimic eicu hirid --n-patients 1500 --seed 42 --n-batches 8 --window-hours 12
 """
 
@@ -41,7 +41,7 @@ DATASET_CFG = {
             "heartrate_timeseries.csv",
             "systolic_timeseries.csv",
         ],
-        "traj_script": WORKSPACE_ROOT / "scripts" / "traj_scripts" / "mimic" / "circulatory_failure_trajs.py",
+        "traj_script": WORKSPACE_ROOT / "scripts" / "trajectory" / "mimic" / "circulatory_failure_trajs.py",
     },
     "eicu": {
         "base_dir": DATA_ROOT / "eicu" / "circulatory_failure",
@@ -51,7 +51,7 @@ DATASET_CFG = {
             "heartrate_timeseries.csv",
             "systolic_timeseries.csv",
         ],
-        "traj_script": WORKSPACE_ROOT / "scripts" / "traj_scripts" / "eicu" / "circulatory_failure_trajs.py",
+        "traj_script": WORKSPACE_ROOT / "scripts" / "trajectory" / "eicu" / "circulatory_failure_trajs.py",
     },
     "hirid": {
         "base_dir": DATA_ROOT / "hirid" / "circulatory_failure",
@@ -61,7 +61,7 @@ DATASET_CFG = {
             "heartrate_timeseries.csv",
             "systolic_timeseries.csv",
         ],
-        "traj_script": WORKSPACE_ROOT / "scripts" / "traj_scripts" / "hirid" / "hirid_circulatory_failure_trajs.py",
+        "traj_script": WORKSPACE_ROOT / "scripts" / "trajectory" / "hirid" / "circulatory_failure_trajs.py",
     },
 }
 

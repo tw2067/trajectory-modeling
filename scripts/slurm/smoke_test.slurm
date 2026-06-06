@@ -20,3 +20,12 @@ done
 
 cd "$REPO_ROOT" || exit 1
 pytest -q "$REPO_ROOT/tests/test_smoke_backends.py" -s
+
+EXIT_CODE=$?
+
+# Attempt to clean PyTensor cache (best-effort)
+if [ -f "$REPO_ROOT/scripts/slurm/cleanup_pytensor_cache.sh" ]; then
+	bash "$REPO_ROOT/scripts/slurm/cleanup_pytensor_cache.sh" || true
+fi
+
+exit $EXIT_CODE

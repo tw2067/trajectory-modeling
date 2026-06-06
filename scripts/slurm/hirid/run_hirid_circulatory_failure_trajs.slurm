@@ -40,12 +40,12 @@ mkdir -p "$LOG_ROOT/outs" "$LOG_ROOT/errs"
 cd "$REPO_ROOT" || exit 1
 
 # Run trajectory computation for all three biomarkers
-python "$REPO_ROOT/scripts/traj_scripts/hirid/hirid_circulatory_failure_trajs.py" \
+python "$REPO_ROOT/scripts/trajectory/hirid/circulatory_failure_trajs.py" \
     --input-dir "$DATA_ROOT/hirid/circulatory_failure" \
     --output-dir "$DATA_ROOT/hirid/circulatory_failure" \
     --window-hours 12.0 \
     --n-batches 10 \
-    --sampler pymc \
+    --sampler nutpie \
     --cohort-splits ${COHORT_SPLITS} \
     --cohort-index ${COHORT_INDEX}
 

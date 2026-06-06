@@ -6,10 +6,10 @@
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=96G
 #SBATCH --partition=cpu-killable
-#SBATCH --array=0-8
+#SBATCH --array=0-11
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="${REPO_ROOT:-$SCRIPT_DIR}"
+REPO_ROOT="${REPO_ROOT:-${SLURM_SUBMIT_DIR:-$SCRIPT_DIR}}"
 while [[ ! -f "$REPO_ROOT/pyproject.toml" && "$REPO_ROOT" != "/" ]]; do
     REPO_ROOT="$(dirname "$REPO_ROOT")"
 done
@@ -30,13 +30,13 @@ N_PATIENTS=1500
 SEED=920
 WINDOW_HOURS=12.0
 N_BATCHES=20
-COHORTS_PER_DATASET=3
+COHORTS_PER_DATASET=4
 SUBSET_ROOT="${SUBSET_ROOT:-$DATA_ROOT/subsets/circulatory_failure_bayes}"
 
-# Array task mapping: 9 tasks (0-8) = 3 datasets × 3 cohorts
-# Tasks 0-2: mimic (cohorts 0, 1, 2)
-# Tasks 3-5: eicu (cohorts 0, 1, 2)
-# Tasks 6-8: hirid (cohorts 0, 1, 2)
+# Array task mapping: 12 tasks (0-11) = 3 datasets × 4 cohorts
+# Tasks 0-3: mimic (cohorts 0, 1, 2, 3)
+# Tasks 4-7: eicu (cohorts 0, 1, 2, 3)
+# Tasks 8-11: hirid (cohorts 0, 1, 2, 3)
 ARRAY_TASK_ID=${SLURM_ARRAY_TASK_ID:-0}
 DATASETS=("mimic" "eicu" "hirid")
 DATASET_IDX=$((ARRAY_TASK_ID / COHORTS_PER_DATASET))
@@ -69,7 +69,7 @@ echo "=========================================="
 echo ""
 
 # Run the subset preparation and Bayesian trajectories for this dataset/cohort
-python "$REPO_ROOT/scripts/traj_scripts/run_circulatory_failure_bayes_subset.py" \
+python "$REPO_ROOT/scripts/trajectory/run_circulatory_failure_bayes_subset.py" \
     --datasets "$DATASET" \
     --n-patients "$N_PATIENTS" \
     --seed "$SEED" \
@@ -86,5 +86,10 @@ echo "=========================================="
 echo "End time: $(date)"
 echo "Exit code: $EXIT_CODE"
 echo "=========================================="
+
+# Attempt to clean PyTensor cache for this job (best-effort)
+if [ -f "$REPO_ROOT/scripts/slurm/cleanup_pytensor_cache.sh" ]; then
+    bash "$REPO_ROOT/scripts/slurm/cleanup_pytensor_cache.sh" || true
+fi
 
 exit $EXIT_CODE

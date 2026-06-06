@@ -115,7 +115,7 @@ def compute_time_varying_trajectory_covariates_parallel(
                 for (_, _, win_df), gpu_id in zip(batch, gpu_rr)
             )
         else:
-            nj_eff = 1 if sampler in ("numpyro", "blackjax", "nutpie") else n_jobs
+            nj_eff = n_jobs if sampler == "nutpie" else 1 if sampler in ("numpyro", "blackjax") else n_jobs
             results = Parallel(n_jobs=nj_eff, backend="loky", verbose=verbose)(
                 delayed(_window_worker)(
                     win_df, flat_thr, decline_thr, nonlinear_gap, df_basis, n_samples, tune,

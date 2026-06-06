@@ -269,8 +269,8 @@ def main():
                         help='Optional path to save prediction dataset merged with probabilities')
     parser.add_argument('--window-hours', type=float, default=12.0,
                         help='Lookback window in hours (default: 12.0)')
-    parser.add_argument('--n-bootstrap', type=int, default=200,
-                        help='Number of bootstrap samples (default: 200)')
+    parser.add_argument('--n-bootstrap', type=int, default=1000,
+                        help='Number of bootstrap samples (default: 1000)')
     parser.add_argument('--n-batches', type=int, default=8,
                         help='Number of batches for processing (default: 8)')
     parser.add_argument('--cohort-splits', type=int, default=1,

@@ -34,7 +34,7 @@ COHORT_INDEX=${SLURM_ARRAY_TASK_ID}
 echo "Starting MIMIC SEPSIS TRAJS run at $(date)"
 echo ""
 
-python "$REPO_ROOT/scripts/traj_scripts/mimic/sepsis_trajs.py" \
+python "$REPO_ROOT/scripts/trajectory/mimic/sepsis_trajs.py" \
 		--biomarker all \
 		--data-dir "$DATA_ROOT/mimic/sepsis" \
 		--pred-dataset "$DATA_ROOT/mimic/sepsis/sepsis_prediction_dataset.csv" \

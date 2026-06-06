@@ -36,7 +36,7 @@ echo "Starting eICU AKI TRAJS run at $(date)"
 echo "Cohort: 4,062 patients, 37,766 samples"
 echo ""
 
-python "$REPO_ROOT/scripts/traj_scripts/eicu/aki_trajs.py" \
+python "$REPO_ROOT/scripts/trajectory/eicu/aki_trajs.py" \
     --input "$DATA_ROOT/eicu/aki/creatinine_timeseries.csv" \
     --pred-dataset "$DATA_ROOT/eicu/aki/aki_prediction_dataset.csv" \
     --output "$DATA_ROOT/eicu/aki/aki_trajectory_probs.csv" \
@@ -53,6 +53,11 @@ EXIT_CODE=$?
 
 echo ""
 echo "eICU AKI TRAJS run completed at $(date) with exit code $EXIT_CODE"
+
+# Attempt to clean PyTensor cache for this job (best-effort)
+if [ -f "$REPO_ROOT/scripts/slurm/cleanup_pytensor_cache.sh" ]; then
+    bash "$REPO_ROOT/scripts/slurm/cleanup_pytensor_cache.sh" || true
+fi
 
 # Exit with the same code as the Python script
 exit $EXIT_CODE

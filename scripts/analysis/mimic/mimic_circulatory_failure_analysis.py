@@ -4,7 +4,10 @@ MIMIC Circulatory Failure Prediction Analysis
 Compares model and feature configurations across single vs multi-biomarker trajectories and summary statistics.
 
 Run from workspace root:
-    python scripts/mimic_circulatory_failure_analysis.py
+    python scripts/analysis/mimic/mimic_circulatory_failure_analysis.py
+
+This analysis expects bootstrap trajectory probability features to already be
+present in the prediction dataset and evaluates the multi-marker feature sets.
 """
 import os
 import sys
@@ -317,7 +320,7 @@ def run_cv(dataset, target_col, id_col, feature_sets, n_repeats=5, n_folds=5, se
         )
     }
 
-    results = {model_name: {} for model_name in models_to_evaluate.keys()}
+    fold_rows = []
 
     logger.info(f"Starting CV: models={len(models_to_evaluate)}, feature_sets={len(feature_sets)}, repeats={n_repeats}, folds={n_folds}")
 
@@ -329,7 +332,7 @@ def run_cv(dataset, target_col, id_col, feature_sets, n_repeats=5, n_folds=5, se
         for feature_set_name, feature_cols in feature_sets.items():
             logger.info(f"  -> Feature set: {feature_set_name} ({len(feature_cols)} features)")
 
-            fold_metrics = {'roc_auc': [], 'avg_precision': [], 'y_true': [], 'y_pred': []}
+            fold_metrics = {'roc_auc': [], 'avg_precision': []}
 
             for repeat in range(n_repeats):
                 shuffle_idx = np.random.RandomState(seed=seed + repeat).permutation(len(dataset_clean))
@@ -341,7 +344,7 @@ def run_cv(dataset, target_col, id_col, feature_sets, n_repeats=5, n_folds=5, se
                 rep_auc = []
                 rep_aupr = []
 
-                for train_idx, test_idx in gkf.split(dataset_repeat, y_repeat, groups_repeat):
+                for fold_idx, (train_idx, test_idx) in enumerate(gkf.split(dataset_repeat, y_repeat, groups_repeat), start=1):
                     X_train = dataset_repeat.iloc[train_idx][feature_cols]
                     X_test = dataset_repeat.iloc[test_idx][feature_cols]
                     y_train = y_repeat.iloc[train_idx]
@@ -369,8 +372,15 @@ def run_cv(dataset, target_col, id_col, feature_sets, n_repeats=5, n_folds=5, se
 
                     fold_metrics['roc_auc'].append(auc)
                     fold_metrics['avg_precision'].append(aupr)
-                    fold_metrics['y_true'].extend(y_test)
-                    fold_metrics['y_pred'].extend(y_pred_proba)
+
+                    fold_rows.append({
+                        'Model': model_name,
+                        'Feature Set': feature_set_name,
+                        'repeat': repeat + 1,
+                        'fold': fold_idx,
+                        'ROC-AUC': auc,
+                        'AUPR': aupr,
+                    })
 
                 logger.info(
                     f"     repeat {repeat + 1:02d}/{n_repeats}: "
@@ -383,36 +393,72 @@ def run_cv(dataset, target_col, id_col, feature_sets, n_repeats=5, n_folds=5, se
                 f"AUPR={np.mean(fold_metrics['avg_precision']):.4f}±{np.std(fold_metrics['avg_precision']):.4f}"
             )
 
-            results[model_name][feature_set_name] = fold_metrics
-
     logger.info('\n✓ Finished model comparisons')
 
-    return results
+    results_df = pd.DataFrame(fold_rows)
+
+    summary_df = (
+        results_df.groupby(['Model', 'Feature Set'], as_index=False)
+        .agg(
+            ROC_AUC_mean=('ROC-AUC', 'mean'),
+            ROC_AUC_std=('ROC-AUC', 'std'),
+            AUPR_mean=('AUPR', 'mean'),
+            AUPR_std=('AUPR', 'std'),
+            n_folds=('ROC-AUC', 'count'),
+        )
+        .sort_values(['Model', 'ROC_AUC_mean'], ascending=[True, False])
+    )
+    summary_df['ROC-AUC'] = summary_df['ROC_AUC_mean']
+    summary_df['ROC-AUC std'] = summary_df['ROC_AUC_std']
+    summary_df['AUPR'] = summary_df['AUPR_mean']
+    summary_df['AUPR std'] = summary_df['AUPR_std']
+
+    baseline_metrics = (
+        results_df[results_df['Feature Set'] == 'Baseline'][['Model', 'repeat', 'fold', 'ROC-AUC', 'AUPR']]
+        .rename(columns={'ROC-AUC': 'Baseline ROC-AUC', 'AUPR': 'Baseline AUPR'})
+    )
+
+    delta_df = results_df.merge(
+        baseline_metrics,
+        on=['Model', 'repeat', 'fold'],
+        how='left',
+        validate='many_to_one',
+    )
+    delta_df['Delta ROC-AUC'] = delta_df['ROC-AUC'] - delta_df['Baseline ROC-AUC']
+    delta_df['Delta AUPR'] = delta_df['AUPR'] - delta_df['Baseline AUPR']
+
+    delta_summary_df = (
+        delta_df[delta_df['Feature Set'] != 'Baseline']
+        .groupby(['Model', 'Feature Set'], as_index=False)
+        .agg(
+            Delta_ROC_AUC_mean=('Delta ROC-AUC', 'mean'),
+            Delta_ROC_AUC_std=('Delta ROC-AUC', 'std'),
+            Delta_AUPR_mean=('Delta AUPR', 'mean'),
+            Delta_AUPR_std=('Delta AUPR', 'std'),
+            n_folds=('Delta ROC-AUC', 'count'),
+        )
+        .sort_values(['Model', 'Delta_ROC_AUC_mean'], ascending=[True, False])
+    )
+
+    return results_df, summary_df, delta_summary_df
 
 
-def save_results(results, output_dir):
-    """Save results to CSV."""
+def save_results(results_df, summary_df, delta_summary_df, output_dir):
+    """Save fold-level and aggregated results."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    summary_rows = []
-    for model_name in results.keys():
-        for feature_set_name, metrics in results[model_name].items():
-            summary_rows.append({
-                'Model': model_name,
-                'Feature Set': feature_set_name,
-                'ROC-AUC': np.mean(metrics['roc_auc']),
-                'ROC-AUC std': np.std(metrics['roc_auc']),
-                'AUPR': np.mean(metrics['avg_precision']),
-                'AUPR std': np.std(metrics['avg_precision']),
-                'n_folds': len(metrics['roc_auc']),
-            })
-
-    summary_df = pd.DataFrame(summary_rows).sort_values(['Model', 'ROC-AUC'], ascending=[True, False])
-
+    fold_results_path = output_dir / 'mimic_circulatory_failure_fold_results.parquet'
     output_path = output_dir / 'mimic_circulatory_failure_summary.csv'
+    delta_path = output_dir / 'mimic_circulatory_failure_delta_summary.csv'
+
+    results_df.to_parquet(fold_results_path, index=False)
     summary_df.to_csv(output_path, index=False)
+    delta_summary_df.to_csv(delta_path, index=False)
+
+    logger.info(f'Results saved to: {fold_results_path}')
     logger.info(f'Results saved to: {output_path}')
+    logger.info(f'Results saved to: {delta_path}')
 
     return summary_df
 
@@ -447,13 +493,13 @@ def main(args):
     )
 
     logger.info('Running cross-validation...')
-    results = run_cv(
+    results_df, summary_df, delta_summary_df = run_cv(
         dataset, target_col, id_col, feature_sets,
         n_repeats=args.n_repeats, n_folds=args.n_folds, seed=args.seed
     )
 
     logger.info('Saving results...')
-    summary_df = save_results(results, output_dir)
+    summary_df = save_results(results_df, summary_df, delta_summary_df, output_dir)
 
     logger.info('Analysis complete!')
     logger.info(f'\nTop 10 configurations:\n{summary_df.head(10)}')

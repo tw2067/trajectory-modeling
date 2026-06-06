@@ -30,7 +30,7 @@ COHORT_INDEX=2
 echo "Starting eICU AKI TRAJs for sub-cohort 3/8 at $(date)"
 echo ""
 
-python "$REPO_ROOT/scripts/traj_scripts/eicu/aki_trajs.py" \
+python "$REPO_ROOT/scripts/trajectory/eicu/aki_trajs.py" \
     --input "$RESULTS_ROOT/eicu/aki/creatinine_timeseries.csv" \
     --pred-dataset "$RESULTS_ROOT/eicu/aki/aki_prediction_dataset.csv" \
     --output "$RESULTS_ROOT/eicu/aki/aki_trajectory_probs.csv" \

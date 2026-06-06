@@ -24,6 +24,11 @@ MPL_CACHE = CACHE_ROOT / '.matplotlib'
 MPL_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault('MPLCONFIGDIR', str(MPL_CACHE))
 
+# ArviZ cache (use /home/gaga/tamarw1 which has more space)
+ARVIZ_CACHE = CACHE_ROOT / '.arviz_cache' / JOB_ID
+ARVIZ_CACHE.mkdir(parents=True, exist_ok=True)
+os.environ['ARVIZ_DATA_HOME'] = str(ARVIZ_CACHE)
+
 # Limit threading
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
@@ -119,7 +124,7 @@ BIOMARKERS = {
 }
 
 
-def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window_hours, n_batches, cohort_patients=None):
+def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window_hours, n_batches, cohort_patients=None, df_basis: int = 5, sampler: str | None = None):
     print("\n" + "=" * 80)
     print(f"Computing Trajectories: {biomarker_name.upper()}")
     print("=" * 80)
@@ -159,7 +164,7 @@ def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window
 
     config = BayesConfig(
         window_years=window_hours,
-        df_basis=5,
+        df_basis=df_basis,
         n_samples=200,
         tune=300,
         min_points_per_window=4,
@@ -172,7 +177,7 @@ def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window
         time_col='time_hours',
         windowing_col='time_hour',
         use_gpu=False,
-        sampler='pymc',
+        sampler=sampler,
         target_accept=0.99,
         chains=4,
         n_jobs=-1,
@@ -262,19 +267,25 @@ def main():
                         help='Optional path to save prediction dataset merged with probabilities')
     parser.add_argument('--window-hours', type=float, default=12.0,
                         help='Lookback window in hours (default: 12.0)')
+    parser.add_argument('--df-basis', type=int, default=5,
+                        help='Spline basis complexity / degrees of freedom (default: 5)')
     parser.add_argument('--n-batches', type=int, default=8,
                         help='Number of batches for processing (default: 8)')
     parser.add_argument('--cohort-splits', type=int, default=1,
                         help='Total number of cohort splits (default: 1)')
     parser.add_argument('--cohort-index', type=int, default=0,
                         help='Which cohort split to process (0-indexed)')
+    parser.add_argument('--sampler', type=str, choices=['pymc', 'numpyro', 'nutpie'], default='pymc',
+                        help='Sampler backend for Bayesian inference (default: pymc)')
 
     args = parser.parse_args()
+    df_basis = args.df_basis
 
     if args.cohort_index < 0 or args.cohort_index >= args.cohort_splits:
         print(f"ERROR: cohort-index must be between 0 and {args.cohort_splits - 1}")
         sys.exit(1)
 
+    sampler = args.sampler
     data_dir = Path(args.data_dir)
     biomarker_results = {}
 
@@ -311,6 +322,8 @@ def main():
             window_hours=args.window_hours,
             n_batches=args.n_batches,
             cohort_patients=cohort_patients,
+            df_basis=df_basis,
+            sampler=sampler,
         )
         if traj_df is not None:
             biomarker_results[biomarker] = traj_df
