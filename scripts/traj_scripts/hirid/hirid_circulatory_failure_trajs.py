@@ -6,35 +6,12 @@ HiRiD circulatory failure trajectory probabilities for three biomarkers:
   - Systolic BP
 """
 
-from __future__ import annotations
-
-import os
-from pathlib import Path
-
-# Configure writable caches before importing heavy scientific packages.
-job_id = os.environ.get('SLURM_JOB_ID', 'local')
-cache_root = Path(os.environ.get('CACHE_ROOT', '/home/gaga/tamarw1'))
-job_cache_root = cache_root / '.cache' / 'hirid_circ_fail_bayes' / job_id
-for subdir in ('tmp', 'pycache', 'numba', 'matplotlib', 'arviz', 'pytensor'):
-    (job_cache_root / subdir).mkdir(parents=True, exist_ok=True)
-
-os.environ.setdefault('TMPDIR', str(job_cache_root / 'tmp'))
-os.environ.setdefault('TEMP', str(job_cache_root / 'tmp'))
-os.environ.setdefault('TMP', str(job_cache_root / 'tmp'))
-os.environ.setdefault('PYTHONPYCACHEPREFIX', str(job_cache_root / 'pycache'))
-os.environ.setdefault('NUMBA_CACHE_DIR', str(job_cache_root / 'numba'))
-os.environ.setdefault('MPLCONFIGDIR', str(job_cache_root / 'matplotlib'))
-os.environ.setdefault('ARVIZ_DATA_HOME', str(job_cache_root / 'arviz'))
-os.environ['PYTENSOR_FLAGS'] = (
-    f"compiledir={job_cache_root / 'pytensor'},"
-    f"base_compiledir={job_cache_root / 'pytensor'},"
-    'optimizer=fast_compile,exception_verbosity=high'
-)
-
 import argparse
 import gc
+import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -46,10 +23,12 @@ sys.path.insert(0, str(code_dir))
 from traj_features.backends.bayes import BayesianTrajPS, BayesConfig
 from traj_features.backends.bayes.classify import flags_from_traj, pos_flags_from_traj
 
-# ArviZ cache (use /home/gaga/tamarw1 which has more space)
-arviz_cache = cache_root / '.arviz_cache' / job_id
-arviz_cache.mkdir(parents=True, exist_ok=True)
-os.environ['ARVIZ_DATA_HOME'] = str(arviz_cache)
+# Use job-specific compile directory to avoid lock contention
+job_id = os.environ.get('SLURM_JOB_ID', 'local')
+os.environ['PYTENSOR_FLAGS'] = (
+    f"base_compiledir={os.path.expanduser('~')}/.pytensor_{job_id},"
+    "optimizer=fast_compile,exception_verbosity=high"
+)
 
 # Limit threading to prevent oversubscription
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -102,13 +81,6 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        '--df-basis',
-        type=int,
-        default=5,
-        help='Spline basis complexity / degrees of freedom (default: 5)'
-    )
-
-    parser.add_argument(
         '--n-batches',
         type=int,
         default=10,
@@ -133,7 +105,7 @@ def parse_args() -> argparse.Namespace:
         '--sampler',
         type=str,
         choices=['pymc', 'numpyro', 'nutpie'],
-        default='pymc',
+        default='nutpie',
         help='Sampler backend for BayesianTrajPS (default: pymc)'
     )
 
@@ -153,11 +125,10 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
     base_out = Path(args.output_dir)
     window = args.window_hours
     sampler = args.sampler
-    df_basis = args.df_basis
 
     lactate_cfg = BayesConfig(
         window_years=window,
-        df_basis=df_basis,
+        df_basis=5,
         n_samples=300,
         tune=300,
         min_points_per_window=4,
@@ -181,7 +152,7 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
 
     hr_cfg = BayesConfig(
         window_years=window,
-        df_basis=df_basis,
+        df_basis=5,
         n_samples=300,
         tune=300,
         min_points_per_window=4,
@@ -205,7 +176,7 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
 
     sbp_cfg = BayesConfig(
         window_years=window,
-        df_basis=df_basis,
+        df_basis=5,
         n_samples=300,
         tune=300,
         min_points_per_window=4,

@@ -26,7 +26,9 @@ This folder contains operational scripts grouped by purpose.
 - Analysis (quick test):
   - `python scripts/analysis/mimic/mimic_sepsis_analysis.py --cv-repeats 1 --cv-splits 2`
 - Trajectory extraction:
-  - `python scripts/trajectory/hirid/hirid_aki_trajs.py`
+  - `python scripts/trajectory/hirid/aki_trajs.py`
+- HiRiD vitals/labs extraction:
+  - `python scripts/trajectory/hirid/extract_vitals_labs.py`
 - Launchers:
   - `./scripts/launchers/hirid/run_hirid_sepsis_nohup.sh --train-n-jobs 8`
 - Subset smoke test:
@@ -60,7 +62,7 @@ Useful checks:
 
 ### Phase 3 (naming consistency)
 - Normalize trajectory file names to remove duplicated dataset prefixes inside dataset folders:
-  - e.g. `scripts/trajectory/hirid/hirid_aki_trajs.py` → `scripts/trajectory/hirid/aki_trajs.py`
+  - e.g. `scripts/traj_scripts/hirid/hirid_aki_trajs.py` → `scripts/trajectory/hirid/aki_trajs.py`
 - Keep old paths as thin wrappers for one release cycle.
 
 ### Phase 4 (cleanup)

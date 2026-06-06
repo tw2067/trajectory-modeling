@@ -233,7 +233,7 @@ python scripts/analysis/mimic/mimic_sepsis_analysis.py
 ```
 
 ### Missing Data Files
-Check that biomarker CSVs exist:
+Check data exists:
 ```bash
 ls -lh /home/gaga/data/physionet/mimic/sepsis/*.csv
 ```
@@ -272,8 +272,8 @@ trajectory-modeling/
 │   └── traj_features/             # (existing trajectory modeling code)
 ├── scripts/
 │   ├── analysis/                  # dataset-specific analysis scripts
-│   ├── launchers/                 # nohup/tmux launchers by dataset
-│   └── traj_scripts/              # trajectory extraction scripts
+│   ├── launchers/                 # nohup/tmux wrappers by dataset
+│   └── traj_scripts/              # legacy compatibility wrappers during the migration
 └── results/
     ├── mimic/
     │   ├── circulatory_failure/

@@ -14,3 +14,29 @@ results/
 .*.pid
 *.pt
 .ipynb_checkpoints/
+
+# Common Python / project ignores
+.pytest_cache/
+.mypy_cache/
+.venv/
+__pypackages__/
+.coverage
+htmlcov/
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Database / large data files
+*.duckdb
+*.db
+*.sqlite
+*.parquet
