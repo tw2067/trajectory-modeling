@@ -46,6 +46,7 @@ def _sample_post_trajs_scaled(
       - 'numpyro' -> pm.sampling_jax.sample_numpyro_nuts (GPU/CPU via JAX)
       - 'nutpie'  -> nutpie.compile_pymc_model + nutpie.sample (fast)
     """
+    print(f"[DEBUG] _sample_post_trajs_scaled called with sampler='{sampler}'")
     dfw = df_window.sort_values(time_col).copy()
     if len(dfw) < min_points:
         raise ValueError("Too few points in this window.")
@@ -54,8 +55,9 @@ def _sample_post_trajs_scaled(
 
     X, y_mu, y_sd, y_std, df_eff = _scale_vals_and_grid(df_basis, dfw, values, time_col, tmin, span)
 
-    # prediction grid on scaled time:
-    n_grid = max(grid_freq, int(round(span * grid_freq)))
+    # prediction grid on scaled time: ensure at least 3 time points so
+    # downstream classification that requires >=3 points does not fail
+    n_grid = max(3, grid_freq, int(round(span * grid_freq)))
     tg_scaled = np.linspace(0.0, 1.0, n_grid)
     X_pred = dmatrix(f"bs(x, df={df_eff}, include_intercept=True)",
                      {"x": tg_scaled}, return_type='dataframe').to_numpy()
@@ -66,6 +68,7 @@ def _sample_post_trajs_scaled(
         mu    = pt.dot(X, beta)
         pm.Normal("y_obs", mu=mu, sigma=sigma, observed=y_std)
 
+        print(f"[DEBUG] Checking sampler: sampler in ('numpyro', 'blackjax') = {sampler in ('numpyro', 'blackjax')}")
         if sampler in ("numpyro", "blackjax"):
             try:
                 import pymc.sampling.jax as sj
@@ -87,7 +90,6 @@ def _sample_post_trajs_scaled(
                 print(f"[WARNING] JAX sampler ({sampler}) unavailable: {e}. Falling back to CPU.")
         if sampler == 'nutpie' or (sampler in ("numpyro", "blackjax") and trace is None):
             try:
-                print(f"[DEBUG] Attempting Nutpie sampling...")
                 import nutpie
                 compiled = nutpie.compile_pymc_model(m)
                 trace = nutpie.sample(
@@ -97,11 +99,9 @@ def _sample_post_trajs_scaled(
                     tune=tune,
                     target_accept=target_accept,
                     seed=SEED,
-                    progressbar=progressbar,
                 )
                 print("[INFO] Using nutpie sampler (CPU)")
-                print(f"[DEBUG] Nutpie succeeded!")
-            except Exception:
+            except Exception as e:
                 print(f"[WARNING] Nutpie sampling failed: {e}")
                 print("[INFO] Using PyMC sampler (CPU)")
                 trace = pm.sample(
