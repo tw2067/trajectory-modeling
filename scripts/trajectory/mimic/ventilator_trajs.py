@@ -181,7 +181,7 @@ def main():
         time_col='time_days',
         windowing_col='time_day',
         use_gpu=False,
-        sampler='pymc',
+        sampler='nutpie',
         target_accept=0.99,
         chains=4,
         n_jobs=-1,

@@ -21,11 +21,16 @@ def _window_worker(
     target_accept: float = 0.95,
 
 ):
-    # Give each process its own PyTensor compiledir to prevent file lock contention
+    # Give each process its own PyTensor compiledir to prevent file lock contention.
+    # We must update pytensor.config directly — loky workers inherit the parent's
+    # PYTENSOR_FLAGS at spawn time (pytensor is already imported before _window_worker
+    # runs), so changing os.environ alone does not affect the live pytensor config.
+    import pytensor
     base = os.environ.get("SLURM_TMPDIR", "/tmp")
     pid = os.getpid()
     compiledir = os.path.join(base, f"pytensor_{pid}")
-
+    os.makedirs(compiledir, exist_ok=True)
+    pytensor.config.base_compiledir = compiledir  # update live config
     os.environ["PYTENSOR_FLAGS"] = f"base_compiledir={compiledir},floatX=float64"
     # Also make BLAS single-threaded inside each worker to avoid oversubscription
     os.environ["OMP_NUM_THREADS"] = "1"
