@@ -15,14 +15,15 @@ while [[ ! -f "$REPO_ROOT/pyproject.toml" && "$REPO_ROOT" != "/" ]]; do
 done
 [[ -f "$REPO_ROOT/pyproject.toml" ]] || { echo "Could not locate repo root"; exit 1; }
 
-DATA_ROOT="${DATA_ROOT:-/home/gaga/data/physionet}"
+DATA_ROOT="${DATA_ROOT:-${TRAJ_DATA_ROOT:-/home/gaga/data/physionet}}"
+export TRAJ_DATA_ROOT="$DATA_ROOT"
 LOG_ROOT="${LOG_ROOT:-$REPO_ROOT/logs}"
 
 mkdir -p "$LOG_ROOT/outs" "$LOG_ROOT/errs"
 cd "$REPO_ROOT" || exit 1
 
 # Activate conda environment
-source /home/gaga/tamarw1/anaconda3/etc/profile.d/conda.sh
+source "${CONDA_SH:-/home/gaga/tamarw1/anaconda3/etc/profile.d/conda.sh}"
 conda activate pymc_env
 
 # Configuration

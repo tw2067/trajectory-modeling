@@ -7,11 +7,12 @@ Time reference: Minutes from unit admission (diagnosisoffset, labresultoffset, o
 
 Usage:
     from eicu_loader import EICULoader
-    loader = EICULoader(db_path='/home/gaga/data/physionet/eicu.duckdb')
+    loader = EICULoader(db_path=os.path.join(os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet"), "eicu.duckdb"))
     aki_cohort = loader.load_aki_cohort()
     labs = loader.load_labs(['creatinine'])
 """
 
+import os
 import duckdb
 import pandas as pd
 import numpy as np
@@ -21,7 +22,7 @@ from typing import List, Dict, Optional, Tuple
 class EICULoader:
     """Query eICU-CRD v2.0 DuckDB and return MIMIC-shaped dataframes."""
     
-    def __init__(self, db_path: str = '/home/gaga/data/physionet/eicu.duckdb'):
+    def __init__(self, db_path: str = os.path.join(os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet"), "eicu.duckdb")):
         """Initialize DuckDB connection."""
         self.db_path = db_path
         self.conn = duckdb.connect(db_path, read_only=True)

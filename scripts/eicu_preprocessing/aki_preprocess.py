@@ -33,7 +33,8 @@ PREDICTION_GAP_DAYS = 0.5      # Don't predict events within 12h
 PREDICTION_WINDOW_DAYS = 4.0   # Predict AKI Stage 3 within 4 days after gap
 LOOKBACK_DAYS = 7.0            # Use 7 days of historical data for features
 MIN_CREAT_MEASUREMENTS = 5     # Minimum creatinine measurements required (match MIMIC)
-OUTPUT_PATH = '/home/gaga/data/physionet/eicu/aki/aki_prediction_dataset.csv'
+_TRAJ_DATA_ROOT = os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet")
+OUTPUT_PATH = os.path.join(_TRAJ_DATA_ROOT, "eicu", "aki", "aki_prediction_dataset.csv")
 
 MAX_PATIENTS = None            # Process full cohort
 
@@ -356,7 +357,7 @@ final_stay_ids = prediction_dataset['stay_id'].unique()
 creatinine_ts_filtered = creatinine_ts[creatinine_ts['stay_id'].isin(final_stay_ids)].copy()
 # Add time_day column (integer day for windowing in trajectory computation)
 creatinine_ts_filtered['time_day'] = creatinine_ts_filtered['time_days'].astype(int)
-creatinine_ts_output = '/home/gaga/data/physionet/eicu/aki/creatinine_timeseries.csv'
+creatinine_ts_output = os.path.join(_TRAJ_DATA_ROOT, "eicu", "aki", "creatinine_timeseries.csv")
 os.makedirs(os.path.dirname(creatinine_ts_output), exist_ok=True)
 creatinine_ts_filtered.to_csv(creatinine_ts_output, index=False)
 print(f"  ✓ Saved raw time series: {len(creatinine_ts_filtered):,} measurements for {len(final_stay_ids):,} patients")

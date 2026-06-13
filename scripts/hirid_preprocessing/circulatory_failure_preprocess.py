@@ -21,10 +21,11 @@ import duckdb
 import pandas as pd
 import numpy as np
 
-OUTPUT_DIR = Path("/home/gaga/data/physionet/hirid/circulatory_failure")
+_TRAJ_DATA_ROOT = os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet")
+OUTPUT_DIR = Path(_TRAJ_DATA_ROOT) / "hirid" / "circulatory_failure"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-DB_PATH = "/home/gaga/data/physionet/HiRiD/hirid.duckdb"
+DB_PATH = os.path.join(_TRAJ_DATA_ROOT, "HiRiD", "hirid.duckdb")
 MIN_LOS_DAYS = 1.0
 PREDICTION_GAP_HOURS = 1.0
 PREDICTION_WINDOW_HOURS = 8.0

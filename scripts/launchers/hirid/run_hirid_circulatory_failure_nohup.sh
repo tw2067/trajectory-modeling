@@ -11,8 +11,8 @@ REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
 cd "$REPO_ROOT" || exit 1
 
 # Parse arguments
-BASE_DIR=${BASE_DIR:-/home/gaga/data/physionet/hirid/circulatory_failure}
-OUTPUT_DIR=${OUTPUT_DIR:-/home/gaga/tamarw1/trajectory-modeling/results/hirid}
+BASE_DIR=${BASE_DIR:-${TRAJ_DATA_ROOT:-/home/gaga/data/physionet}/hirid/circulatory_failure}
+OUTPUT_DIR=${OUTPUT_DIR:-${TRAJ_RESULTS_ROOT:-$REPO_ROOT/results}/hirid}
 LOOKBACK_HOURS=${LOOKBACK_HOURS:-12}
 EVAL_PROFILE=${EVAL_PROFILE:-full}
 N_JOBS=${N_JOBS:-4}

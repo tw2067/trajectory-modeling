@@ -26,7 +26,7 @@ cd "$REPO_ROOT" || exit 1
 mkdir -p "$LOG_ROOT/outs/retry" "$LOG_ROOT/errs/retry" "$RESULTS_ROOT/eicu/aki"
 
 # Activate conda environment
-source /home/gaga/tamarw1/anaconda3/etc/profile.d/conda.sh
+source "${CONDA_SH:-/home/gaga/tamarw1/anaconda3/etc/profile.d/conda.sh}"
 conda activate pymc_env
 
 # Cohort splitting

@@ -20,6 +20,7 @@ Custom example:
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -29,7 +30,7 @@ import pandas as pd
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
-DATA_ROOT = Path("/home/gaga/data/physionet")
+DATA_ROOT = Path(os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet"))
 
 
 DATASET_CFG = {
@@ -251,7 +252,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--subset-root",
         type=str,
-        default="/home/gaga/data/physionet/subsets/circulatory_failure_bayes",
+        default=str(DATA_ROOT / "subsets" / "circulatory_failure_bayes"),
         help="Root directory where subset files/results are written",
     )
     p.add_argument("--dry-run", action="store_true", help="Only print commands, do not execute")

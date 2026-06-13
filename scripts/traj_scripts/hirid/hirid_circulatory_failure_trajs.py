@@ -38,6 +38,8 @@ os.environ['OPENBLAS_NUM_THREADS'] = '1'
 # Force PyTensor to use C linker (more stable with parallel workers)
 os.environ['PYTENSOR_FLAGS'] += ',cxx='
 
+_DATA_ROOT = os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet")
+
 print(f"[Setup] PyTensor compile dir: ~/.pytensor_{job_id}")
 print(f"[Setup] Thread limits: OMP/MKL/OpenBLAS = 1")
 
@@ -62,14 +64,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '--input-dir',
         type=str,
-        default='/home/gaga/data/physionet/hirid/circulatory_failure',
+        default=os.path.join(_DATA_ROOT, 'hirid', 'circulatory_failure'),
         help='Directory containing lactate_timeseries.csv, heartrate_timeseries.csv, systolic_timeseries.csv'
     )
 
     parser.add_argument(
         '--output-dir',
         type=str,
-        default='/home/gaga/data/physionet/hirid/circulatory_failure',
+        default=os.path.join(_DATA_ROOT, 'hirid', 'circulatory_failure'),
         help='Directory to write trajectory probability CSVs'
     )
 

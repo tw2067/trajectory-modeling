@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -11,7 +12,7 @@ from pathlib import Path
 
 DATASET = "hirid"
 DEFAULT_COHORT_SPLITS = 4
-DATA_ROOT = "/home/gaga/data/physionet/hirid/circulatory_failure"
+DATA_ROOT = os.path.join(os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet"), "hirid", "circulatory_failure")
 
 
 def parse_args() -> argparse.Namespace:

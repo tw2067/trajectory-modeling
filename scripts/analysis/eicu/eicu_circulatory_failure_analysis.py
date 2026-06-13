@@ -422,7 +422,7 @@ def run_cv(dataset, target_col, id_col, feature_sets, train_n_jobs=1, train_back
 
 def main():
     parser = argparse.ArgumentParser(description='eICU Circulatory Failure Analysis')
-    parser.add_argument('--base-dir', type=str, default='/home/gaga/data/physionet/eicu/circulatory_failure',
+    parser.add_argument('--base-dir', type=str, default=os.path.join(os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet"), "eicu", "circulatory_failure"),
                        help='Base directory for data')
     parser.add_argument('--output-dir', type=str, default='results/eicu/circulatory_failure',
                        help='Output directory for results')

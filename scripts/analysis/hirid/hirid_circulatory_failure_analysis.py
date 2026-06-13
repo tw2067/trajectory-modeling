@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import warnings
 from pathlib import Path
 
@@ -498,13 +499,13 @@ def main():
     parser.add_argument(
         "--base-dir",
         type=str,
-        default="/home/gaga/data/physionet/hirid/circulatory_failure",
+        default=os.path.join(os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet"), "hirid", "circulatory_failure"),
         help="Directory containing HiRiD circulatory failure data",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="/home/gaga/tamarw1/trajectory-modeling/results/hirid",
+        default=os.path.join(os.environ.get("TRAJ_RESULTS_ROOT", str(Path(__file__).resolve().parents[3] / "results")), "hirid"),
         help="Directory to save output tables",
     )
     parser.add_argument(

@@ -20,6 +20,8 @@ os.environ['OPENBLAS_NUM_THREADS'] = '4'
 
 sys.path.insert(0, os.path.abspath('src'))
 
+_DATA_ROOT = os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet")
+
 from traj_features.backends.bootstrap import BootstrapTrajPS, BootstrapConfig
 from traj_features.backends.bayes.classify import pos_flags_from_traj, flags_from_traj
 
@@ -261,9 +263,9 @@ def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window
 
 def main():
     parser = argparse.ArgumentParser(description='Compute HiRiD bootstrap circulatory failure trajectory probabilities')
-    parser.add_argument('--data-dir', type=str, default='/home/gaga/data/physionet/hirid/circulatory_failure',
+    parser.add_argument('--data-dir', type=str, default=os.path.join(_DATA_ROOT, 'hirid', 'circulatory_failure'),
                         help='Directory containing biomarker time series CSVs')
-    parser.add_argument('--pred-dataset', type=str, default='/home/gaga/data/physionet/hirid/circulatory_failure/circulatory_failure_prediction_dataset.csv',
+    parser.add_argument('--pred-dataset', type=str, default=os.path.join(_DATA_ROOT, 'hirid', 'circulatory_failure', 'circulatory_failure_prediction_dataset.csv'),
                         help='Path to prediction dataset for merging')
     parser.add_argument('--merged-output', type=str, default=None,
                         help='Optional path to save prediction dataset merged with probabilities')

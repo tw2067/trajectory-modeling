@@ -15,7 +15,7 @@ import sys
 
 # Ensure compiled artifacts and matplotlib cache land in a writable location
 JOB_ID = os.environ.get('SLURM_JOB_ID', 'local')
-CACHE_ROOT = Path('/home/gaga/tamarw1')
+CACHE_ROOT = Path(os.environ.get("TRAJ_CACHE_ROOT", str(Path.home())))
 PYTENSOR_CACHE = CACHE_ROOT / '.pytensor_cache' / JOB_ID
 PYTENSOR_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ['PYTENSOR_FLAGS'] = f"compiledir={PYTENSOR_CACHE},base_compiledir={PYTENSOR_CACHE},optimizer=fast_compile,exception_verbosity=high"
@@ -23,6 +23,8 @@ os.environ['PYTENSOR_FLAGS'] = f"compiledir={PYTENSOR_CACHE},base_compiledir={PY
 MPL_CACHE = CACHE_ROOT / '.matplotlib'
 MPL_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault('MPLCONFIGDIR', str(MPL_CACHE))
+
+_DATA_ROOT = os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet")
 
 # Limit threading
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -88,13 +90,13 @@ def precompile_pytensor_functions(config):
 def main():
     parser = argparse.ArgumentParser(description='Compute MIMIC liver trajectory probabilities')
     parser.add_argument('--input', type=str,
-                        default='/home/gaga/data/physionet/mimic/liver/bilirubin_timeseries.csv',
+                        default=os.path.join(_DATA_ROOT, 'mimic', 'liver', 'bilirubin_timeseries.csv'),
                         help='Path to raw bilirubin time series CSV')
     parser.add_argument('--pred-dataset', type=str,
-                        default='/home/gaga/data/physionet/mimic/liver/liver_prediction_dataset.csv',
+                        default=os.path.join(_DATA_ROOT, 'mimic', 'liver', 'liver_prediction_dataset.csv'),
                         help='Path to prediction dataset for merging')
     parser.add_argument('--output', type=str,
-                        default='/home/gaga/data/physionet/mimic/liver/bili_trajectory_probs_bayes.csv',
+                        default=os.path.join(_DATA_ROOT, 'mimic', 'liver', 'bili_trajectory_probs_bayes.csv'),
                         help='Path to save trajectory probabilities (time series + probs)')
     parser.add_argument('--merged-output', type=str,
                         default=None,

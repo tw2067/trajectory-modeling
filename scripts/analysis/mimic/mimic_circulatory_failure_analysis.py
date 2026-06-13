@@ -509,7 +509,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='MIMIC Circulatory Failure Analysis')
     parser.add_argument(
         '--base-dir',
-        default='/home/gaga/data/physionet/mimic/circulatory_failure',
+        default=os.path.join(os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet"), "mimic", "circulatory_failure"),
         help='Base directory containing data files'
     )
     parser.add_argument(

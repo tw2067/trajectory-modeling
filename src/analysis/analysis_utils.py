@@ -12,6 +12,7 @@ Provides:
 from __future__ import annotations
 
 import logging
+import os
 import warnings
 from pathlib import Path
 from typing import Optional
@@ -384,21 +385,22 @@ def get_dataset_config(dataset: str) -> dict:
     Returns:
         Dictionary with keys: id_col, time_col_base (hours/days), base_path
     """
+    _traj_data_root = Path(os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet"))
     configs = {
         "mimic": {
             "id_col": "hadm_id",
             "time_unit": "hours",  # MIMIC uses hours
-            "base_path": Path("/home/gaga/data/physionet/mimic"),
+            "base_path": _traj_data_root / "mimic",
         },
         "hirid": {
             "id_col": "patientid",
             "time_unit": "hours",  # HiRiD uses hours
-            "base_path": Path("/home/gaga/data/physionet/hirid"),
+            "base_path": _traj_data_root / "hirid",
         },
         "eicu": {
             "id_col": "stay_id",
             "time_unit": "days",  # eICU uses days
-            "base_path": Path("/home/gaga/data/physionet/eicu"),
+            "base_path": _traj_data_root / "eicu",
         },
     }
     
