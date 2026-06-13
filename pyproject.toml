@@ -40,3 +40,10 @@ all = ["traj_features[bayes,bootstrap,evaluation]"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow, involves MCMC sampling (deselect with '-m not slow')",
+    "gpu: marks tests that require a GPU node with JAX/numpyro installed",
+]
+testpaths = ["tests"]

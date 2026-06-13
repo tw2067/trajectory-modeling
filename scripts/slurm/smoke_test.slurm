@@ -19,7 +19,9 @@ done
 [[ -f "$REPO_ROOT/pyproject.toml" ]] || { echo "Could not locate repo root"; exit 1; }
 
 cd "$REPO_ROOT" || exit 1
-pytest -q "$REPO_ROOT/tests/test_smoke_backends.py" -s
+
+# Fast tests + slow CPU tests + GPU-specific tests (numpyro JAX fix regression)
+pytest -q "$REPO_ROOT/tests/test_smoke_backends.py" -m "not slow or slow" --tb=short -s
 
 EXIT_CODE=$?
 
