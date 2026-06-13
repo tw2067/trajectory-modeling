@@ -11,11 +11,16 @@
 #SBATCH --account=gpu-research
 #SBATCH --partition=gpu-shamir
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="${REPO_ROOT:-$SCRIPT_DIR}"
-while [[ ! -f "$REPO_ROOT/pyproject.toml" && "$REPO_ROOT" != "/" ]]; do
-	REPO_ROOT="$(dirname "$REPO_ROOT")"
-done
+# SLURM_SUBMIT_DIR is set by sbatch to the directory where the job was submitted.
+# Fall back to walking up from BASH_SOURCE only if the env var is absent.
+REPO_ROOT="${REPO_ROOT:-${SLURM_SUBMIT_DIR:-}}"
+if [[ -z "$REPO_ROOT" || ! -f "$REPO_ROOT/pyproject.toml" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    REPO_ROOT="$SCRIPT_DIR"
+    while [[ ! -f "$REPO_ROOT/pyproject.toml" && "$REPO_ROOT" != "/" ]]; do
+        REPO_ROOT="$(dirname "$REPO_ROOT")"
+    done
+fi
 [[ -f "$REPO_ROOT/pyproject.toml" ]] || { echo "Could not locate repo root"; exit 1; }
 
 cd "$REPO_ROOT" || exit 1
