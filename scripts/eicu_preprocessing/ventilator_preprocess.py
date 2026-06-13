@@ -302,7 +302,7 @@ else:
 # Forward-fill imputation within each patient
 print("\n[6/10] Forward-fill imputation...")
 daily_features = daily_features.sort_values(['stay_id', 'time_day'])
-daily_features = daily_features.set_index('stay_id').groupby(level=0).fillna(method='ffill').reset_index()
+daily_features = daily_features.set_index('stay_id').groupby(level=0).ffill().reset_index()
 
 # Drop columns with >20% missing
 print("\n[7/10] Dropping columns with >20% missing...")

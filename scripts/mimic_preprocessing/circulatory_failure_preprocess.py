@@ -192,7 +192,7 @@ if len(vitals_df) > 0 and len(labs_df) > 0:
     hadm_final = hadm_final.drop_duplicates(subset=["hadm_id", "time_hour"])
 
     hadm_final = hadm_final.sort_values(["hadm_id", "time_hour"])
-    hadm_final = hadm_final.set_index("hadm_id").groupby(level=0).fillna(method="ffill").reset_index()
+    hadm_final = hadm_final.set_index("hadm_id").groupby(level=0).ffill().reset_index()
 
     missing_pct = hadm_final.isnull().mean()
     cols_to_drop = missing_pct[missing_pct > 0.2].index.tolist()

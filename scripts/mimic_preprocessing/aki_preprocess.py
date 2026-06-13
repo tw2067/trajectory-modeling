@@ -300,7 +300,7 @@ if len(vitals_df) > 0 and len(labs_df) > 0:
 
     # Forward-fill imputation within each admission
     hadm_pred = hadm_pred.sort_values(["hadm_id", "time_day"])
-    hadm_pred = hadm_pred.set_index("hadm_id").groupby(level=0).fillna(method="ffill").reset_index()
+    hadm_pred = hadm_pred.set_index("hadm_id").groupby(level=0).ffill().reset_index()
 
     # Drop columns with >20% missing (eICU-style)
     missing_pct = hadm_pred.isnull().mean()
