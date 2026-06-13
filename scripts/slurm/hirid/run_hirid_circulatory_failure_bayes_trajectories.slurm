@@ -70,7 +70,7 @@ echo "Window: ${WINDOW_HOURS}h"
 echo "Batches: ${N_BATCHES}"
 echo "=========================================="
 
-python scripts/traj_scripts/hirid/hirid_circulatory_failure_bayes_trajectories.py \
+python scripts/trajectory/hirid/hirid_circulatory_failure_bayes_trajectories.py \
     --cohort-index ${COHORT_INDEX} \
     --cohort-splits 4 \
     --window-hours ${WINDOW_HOURS} \

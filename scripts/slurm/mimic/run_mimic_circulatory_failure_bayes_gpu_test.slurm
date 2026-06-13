@@ -44,7 +44,7 @@ echo "Sampler: numpyro"
 echo "df-basis: 4"
 echo "=========================================="
 
-python scripts/traj_scripts/mimic/mimic_circulatory_failure_bayes_trajectories.py \
+python scripts/trajectory/mimic/mimic_circulatory_failure_bayes_trajectories.py \
     --cohort-index 0 \
     --cohort-splits 20 \
     --window-hours 12.0 \
