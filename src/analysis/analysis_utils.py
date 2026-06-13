@@ -383,23 +383,23 @@ def get_dataset_config(dataset: str) -> dict:
         dataset: 'mimic', 'hirid', or 'eicu'
     
     Returns:
-        Dictionary with keys: id_col, time_col_base (hours/days), base_path
+        Dictionary with keys: id_col, base_path.
+        Time resolution varies by task, not dataset: CF uses time_hours/time_hour
+        (hourly); AKI/liver/sepsis/ventilator use time_days/time_day (daily).
+        Use pick_time_cols() at runtime to detect the correct columns.
     """
     _traj_data_root = Path(os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet"))
     configs = {
         "mimic": {
             "id_col": "hadm_id",
-            "time_unit": "hours",  # MIMIC uses hours
             "base_path": _traj_data_root / "mimic",
         },
         "hirid": {
             "id_col": "patientid",
-            "time_unit": "hours",  # HiRiD uses hours
             "base_path": _traj_data_root / "hirid",
         },
         "eicu": {
             "id_col": "stay_id",
-            "time_unit": "days",  # eICU uses days
             "base_path": _traj_data_root / "eicu",
         },
     }
