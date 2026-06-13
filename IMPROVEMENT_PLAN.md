@@ -19,10 +19,29 @@
 | 8 | Preprocessing | Standardize column naming across all preprocessing scripts | ✅ (see below) |
 | 9 | Dead code | Complete script migration: delete old dirs, promote new structure | ⚠️ deferred |
 | 10 | Organization | Add `src/analysis/` as proper installed package | ✅ already done |
+| 11 | Bayes bug | Fix PyTensor compiledir race + switch all non-CF scripts to nutpie | ✅ a317430 |
 
 ---
 
 ## Decision Log
+
+### Step 11 — PyTensor race condition fix
+
+**Root cause (MIMIC AKI job 355220, 39/45 array tasks, exit code 1):**
+All 9 non-CF trajectory scripts (MIMIC: aki/sepsis/liver/ventilator; eICU: aki/sepsis/sepsis_all/liver/ventilator) had `sampler='pymc'` hardcoded. With `n_jobs=-1` (64 workers), all workers tried to compile PyTensor C code into the same `PYTENSOR_CACHE` directory simultaneously. Workers would find `key.pkl` (model registered) but the corresponding `.so` file was still being compiled or already clobbered by another worker → `ModuleNotFoundError`.
+
+**Why the previous `pipeline.py` fix didn't work:**
+`_window_worker` set `os.environ["PYTENSOR_FLAGS"]` to a per-PID directory, but loky workers inherit the parent's env at spawn time and import pytensor before `_window_worker` runs. Changing the env var after import has no effect on the live pytensor config object.
+
+**Two-layer fix applied:**
+
+1. `pipeline.py`: added `pytensor.config.base_compiledir = compiledir` directly on the live config object, alongside the env var update. This ensures any fallback `pm.sample()` call compiles into an isolated per-PID directory.
+
+2. All 9 non-CF scripts: `sampler='pymc'` → `sampler='nutpie'`. Nutpie uses Rust/LLVM and bypasses PyTensor's C linker entirely — the race condition cannot occur. Also ~4× faster than pymc (as confirmed by benchmark).
+
+Note: the `precompile_pytensor_functions()` calls in these scripts are now no-ops for nutpie paths but are left in place as a warmup for any pm.sample() fallback.
+
+---
 
 ### Step 8 — Column naming audit findings
 
