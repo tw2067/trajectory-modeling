@@ -25,12 +25,18 @@ class BayesConfig:
     use_gpu: bool = True
     sampler: Literal["pymc", "numpyro", "nutpie"] = "pymc"
     chains: int = 4
-    chain_method: Literal["parallel","vectorized","sequential"] = "vectorized"
+    # "vectorized": all chains share one GPU/process (less memory, lower throughput).
+    # "parallel": one chain per GPU (more memory, higher throughput). GPU runs only.
+    chain_method: Literal["parallel", "vectorized", "sequential"] = "vectorized"
     cores: int = 1
     n_jobs: int = -1
     progressbar: bool = False
     available_gpus: list[int] | None = None
     target_accept: Optional[float] = 0.95
+    # batch_size: number of (patient, timepoint) windows processed per joblib batch.
+    # Larger values reduce scheduling overhead; smaller values allow more frequent
+    # cache flushes (useful on SLURM with limited /tmp space).
+    batch_size: int = 500
     traj_types: tuple[str, ...] = ('prolonged_nonprogression', 'linear_decline', 'nonlinear')
     class_func: Callable = flags_from_traj
     label_map: Optional[Dict[str, str]] = None
@@ -39,21 +45,24 @@ class BayesianTrajPS:
     name = "bayes"
     def __init__(self, cfg: BayesConfig | None = None):
         self.cfg = cfg or BayesConfig()
-        # Auto-select GPU sampler if requested
-        if self.cfg.use_gpu and self.cfg.sampler == "pymc":
-            # Prefer numpyro if installed; otherwise try nutpie
-            try:
-                import pymc.sampling.jax  # noqa: F401
-                self.cfg.sampler = "numpyro"
-                print("Using 'numpyro' sampler for Bayesian trajectory modeling.")
-            except Exception:
+        # Auto-select sampler when left at default "pymc":
+        #   GPU requested → try numpyro (JAX), then nutpie, then pymc
+        #   CPU only      → try nutpie (3-5x faster than pymc on CPU), then pymc
+        if self.cfg.sampler == "pymc":
+            if self.cfg.use_gpu:
+                try:
+                    import pymc.sampling.jax  # noqa: F401
+                    self.cfg.sampler = "numpyro"
+                    print("Using 'numpyro' sampler (JAX/GPU).")
+                except Exception:
+                    pass
+            if self.cfg.sampler == "pymc":
                 try:
                     import nutpie  # noqa: F401
                     self.cfg.sampler = "nutpie"
-                    print("Using 'nutpie' sampler for Bayesian trajectory modeling.")
+                    print("Using 'nutpie' sampler (fast CPU).")
                 except Exception:
-                    self.cfg.sampler = "pymc"
-                    print("Falling back to 'pymc' sampler for Bayesian trajectory modeling.")
+                    print("Using 'pymc' sampler (CPU).")
         self.ctv_ = None
 
     # Optional: no training needed to get embeddings; leave fit as no-op or Cox fit
@@ -84,11 +93,13 @@ class BayesianTrajPS:
             n_jobs=self.cfg.n_jobs,
             min_points_per_window=self.cfg.min_points_per_window,
             grid_freq=self.cfg.grid_freq,
+            batch_size=self.cfg.batch_size,
             pids=self.cfg.pids,
             values=self.cfg.values,
             time_col=self.cfg.time_col,
             sampler=self.cfg.sampler,
             chains=self.cfg.chains,
+            chain_method=self.cfg.chain_method,
             cores=self.cfg.cores,
             target_accept=self.cfg.target_accept,
             progressbar=self.cfg.progressbar,
