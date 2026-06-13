@@ -29,12 +29,14 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 # Benchmark config — realistic production-like settings
 # ---------------------------------------------------------------------------
 N_PATIENTS   = 30
-N_TIMEPOINTS = 28    # ~4 weeks daily; yields ~3-4 windows per patient at window_years=2
+N_TIMEPOINTS = 28    # 4 weeks of daily measurements
 N_SAMPLES    = 500
 TUNE         = 250
 CHAINS       = 4
 BATCH_SIZE   = 10
-WINDOW_YEARS = 2.0
+# window_years is compared directly against windowing_col values (time_day, integers).
+# 14-day lookback gives up to 15 points per window — realistic for ICU lab trending.
+WINDOW_YEARS = 14.0
 DF_BASIS     = 4
 GRID_FREQ    = 12
 
