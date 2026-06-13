@@ -6,9 +6,7 @@
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=128G
 #SBATCH --time=12:00:00
-#SBATCH --gres=gpu:1
-#SBATCH --account=gpu-research
-#SBATCH --partition=gpu-shamir
+#SBATCH --partition=cpu-killable
 #SBATCH --array=0-9
 
 # HiRiD Circulatory Failure Trajectory Computation (multi-biomarker)
