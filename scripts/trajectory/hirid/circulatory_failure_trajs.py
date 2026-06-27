@@ -24,9 +24,13 @@ from traj_features.backends.bayes import BayesianTrajPS, BayesConfig
 from traj_features.backends.bayes.classify import flags_from_traj, pos_flags_from_traj
 
 # Use job-specific compile directory to avoid lock contention
-job_id = os.environ.get('SLURM_JOB_ID', 'local')
+array_job_id = os.environ.get('SLURM_ARRAY_JOB_ID', os.environ.get('SLURM_JOB_ID', 'local'))
+array_task_id = os.environ.get('SLURM_ARRAY_TASK_ID', '0')
+job_id = f"{array_job_id}_{array_task_id}"
+pytensor_cache = Path.home() / '.pytensor_cache' / job_id
+pytensor_cache.mkdir(parents=True, exist_ok=True)
 os.environ['PYTENSOR_FLAGS'] = (
-    f"base_compiledir={os.path.expanduser('~')}/.pytensor_{job_id},"
+    f"base_compiledir={pytensor_cache},"
     "optimizer=fast_compile,exception_verbosity=high"
 )
 
@@ -35,13 +39,18 @@ os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 
-# Force PyTensor to use C linker (more stable with parallel workers)
-os.environ['PYTENSOR_FLAGS'] += ',cxx='
-
 _DATA_ROOT = os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet")
 
-print(f"[Setup] PyTensor compile dir: ~/.pytensor_{job_id}")
+N_JOBS = int(os.environ.get('SLURM_CPUS_PER_TASK', -1))
+# Heartrate and systolic have 200× more rows than lactate.  Running all
+# SLURM CPUs in parallel exhausts 96 GB RAM (SIGKILL on workers).  Cap
+# parallelism for these biomarkers; leave lactate uncapped.
+HEAVY_MAX_JOBS = int(os.environ.get('TRAJ_HEAVY_MAX_JOBS', '16'))
+
+print(f"[Setup] PyTensor compile dir: {pytensor_cache}")
 print(f"[Setup] Thread limits: OMP/MKL/OpenBLAS = 1")
+print(f"[Setup] n_jobs: {N_JOBS} (SLURM_CPUS_PER_TASK={os.environ.get('SLURM_CPUS_PER_TASK', 'unset')})")
+print(f"[Setup] heavy_max_jobs: {HEAVY_MAX_JOBS} (heartrate/systolic capped to avoid OOM)")
 
 
 @dataclass
@@ -111,6 +120,13 @@ def parse_args() -> argparse.Namespace:
         help='Sampler backend for BayesianTrajPS (default: pymc)'
     )
 
+    parser.add_argument(
+        '--df-basis',
+        type=int,
+        default=5,
+        help='Spline basis degrees of freedom for BayesConfig (default: 5)'
+    )
+
     return parser.parse_args()
 
 
@@ -130,7 +146,7 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
 
     lactate_cfg = BayesConfig(
         window_years=window,
-        df_basis=5,
+        df_basis=args.df_basis,
         n_samples=300,
         tune=300,
         min_points_per_window=4,
@@ -146,15 +162,17 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
         sampler=sampler,
         target_accept=0.995,
         chains=4,
-        n_jobs=-1,
+        n_jobs=N_JOBS,
         class_func=pos_flags_from_traj,
         traj_types=('stable', 'gradual_increase', 'rapid_increase'),
         label_map={'nonprogression': 'stable', 'linear': 'gradual_increase', 'nonlinear': 'rapid_increase'}
     )
 
+    heavy_jobs = min(N_JOBS, HEAVY_MAX_JOBS) if N_JOBS > 0 else HEAVY_MAX_JOBS
+
     hr_cfg = BayesConfig(
         window_years=window,
-        df_basis=5,
+        df_basis=args.df_basis,
         n_samples=300,
         tune=300,
         min_points_per_window=4,
@@ -170,7 +188,7 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
         sampler=sampler,
         target_accept=0.995,
         chains=4,
-        n_jobs=-1,
+        n_jobs=heavy_jobs,
         class_func=pos_flags_from_traj,
         traj_types=('stable', 'gradual_increase', 'rapid_increase'),
         label_map={'nonprogression': 'stable', 'linear': 'gradual_increase', 'nonlinear': 'rapid_increase'}
@@ -178,7 +196,7 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
 
     sbp_cfg = BayesConfig(
         window_years=window,
-        df_basis=5,
+        df_basis=args.df_basis,
         n_samples=300,
         tune=300,
         min_points_per_window=4,
@@ -194,7 +212,7 @@ def _make_configs(args: argparse.Namespace) -> Dict[str, BiomarkerSpec]:
         sampler=sampler,
         target_accept=0.995,
         chains=4,
-        n_jobs=-1,
+        n_jobs=heavy_jobs,
         class_func=flags_from_traj,
         traj_types=('stable', 'gradual_decline', 'rapid_decline'),
         label_map={'nonprogression': 'stable', 'linear': 'gradual_decline', 'nonlinear': 'rapid_decline'}
@@ -310,7 +328,7 @@ def _compute_biomarker_probs(spec: BiomarkerSpec, n_batches: int, cohort_patient
     probs_ts = df.merge(
         trajectory_probs[['patientid', 'time_hour'] + prob_cols],
         on=['patientid', 'time_hour'],
-        how='left'
+        how='inner'
     )
 
     spec.output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -352,6 +370,9 @@ def main():
     for spec in specs.values():
         if args.cohort_splits > 1:
             spec.output_path = spec.output_path.parent / f"{spec.output_path.stem}_cohort{args.cohort_index:02d}{spec.output_path.suffix}"
+        if spec.output_path.exists():
+            print(f"✓ Skipping {spec.name} — output already exists: {spec.output_path}")
+            continue
         _compute_biomarker_probs(spec, args.n_batches, cohort_patients)
 
 

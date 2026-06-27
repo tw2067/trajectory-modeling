@@ -18,7 +18,7 @@ import sys
 # Ensure compiled artifacts and matplotlib cache land in a writable location
 JOB_ID = os.environ.get('SLURM_JOB_ID', 'local')
 CACHE_ROOT = Path(os.environ.get("TRAJ_CACHE_ROOT", str(Path.home())))
-PYTENSOR_CACHE = CACHE_ROOT / '.pytensor_cache' / JOB_ID
+PYTENSOR_CACHE = Path.home() / '.pytensor_cache' / JOB_ID
 PYTENSOR_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ['PYTENSOR_FLAGS'] = f"compiledir={PYTENSOR_CACHE},base_compiledir={PYTENSOR_CACHE},optimizer=fast_compile,exception_verbosity=high"
 

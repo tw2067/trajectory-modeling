@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=eicu_circ_fail_bayes_traj
-#SBATCH --output=logs/outs/%x_%j.out
-#SBATCH --error=logs/errs/%x_%j.err
+#SBATCH --output=logs/outs/%x_%A_%a.out
+#SBATCH --error=logs/errs/%x_%A_%a.err
 #SBATCH --array=0-3
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -22,6 +22,9 @@ while [[ ! -f "$REPO_ROOT/pyproject.toml" && "$REPO_ROOT" != "/" ]]; do
 done
 [[ -f "$REPO_ROOT/pyproject.toml" ]] || { echo "Could not locate repo root"; exit 1; }
 
+# Cleanup pytensor cache and /dev/shm tmpdir on any exit (including SIGTERM from job timeout)
+trap 'bash "${REPO_ROOT}/scripts/slurm/cleanup_pytensor_cache.sh" 2>/dev/null || true; rm -rf "${JOB_TMP}" 2>/dev/null || true; rm -rf "/dev/shm/tamarw1_${SLURM_JOB_ID:-local}" 2>/dev/null || true' EXIT
+
 COHORT_INDEX=${SLURM_ARRAY_TASK_ID}
 WINDOW_HOURS=12.0
 N_BATCHES=8
@@ -29,9 +32,30 @@ DF_BASIS=${DF_BASIS:-4}
 SAMPLER=nutpie
 
 DATA_ROOT="${DATA_ROOT:-${TRAJ_DATA_ROOT:-/home/gaga/data/physionet}}"
+export TRAJ_CACHE_ROOT="${TRAJ_CACHE_ROOT:-/home/gaga/tamarw1}"
 export TRAJ_DATA_ROOT="$DATA_ROOT"
 LOG_ROOT="${LOG_ROOT:-$REPO_ROOT/logs}"
 mkdir -p "$LOG_ROOT/outs" "$LOG_ROOT/errs"
+
+# Route tmp*.py and other per-job temp files to /dev/shm (RAM, not NFS quota)
+# so PyTensor/Numba intermediate files never land on gaga.
+SHM_TMP="/dev/shm/tamarw1_${SLURM_JOB_ID:-local}"
+find /dev/shm -maxdepth 1 -name "tamarw1_*" -type d -mtime +1 -exec rm -rf {} + 2>/dev/null || true
+mkdir -p "$SHM_TMP"
+export TMPDIR="$SHM_TMP"
+export TEMP="$SHM_TMP"
+export TMP="$SHM_TMP"
+export PYTHONPYCACHEPREFIX="$SHM_TMP/pycache"
+# Small gaga JOB_TMP for matplotlib config only
+JOB_TMP="${TRAJ_CACHE_ROOT}/.job_tmp/eicu_cf/${SLURM_JOB_ID:-local}"
+mkdir -p "$JOB_TMP/matplotlib"
+export NUMBA_DISABLE_CACHING=1
+export MPLCONFIGDIR="$JOB_TMP/matplotlib"
+PYTENSOR_CACHE_ROOT="${HOME}/.pytensor_cache/${SLURM_JOB_ID:-local}"
+find "${HOME}/.pytensor_cache" -maxdepth 1 -mindepth 1 -type d -mtime +1 -exec rm -rf {} + 2>/dev/null || true
+mkdir -p "$PYTENSOR_CACHE_ROOT"
+export PYTENSOR_FLAGS="base_compiledir=${PYTENSOR_CACHE_ROOT},optimizer=fast_compile,exception_verbosity=high"
+
 cd "$REPO_ROOT" || exit 1
 
 # Activate conda environment

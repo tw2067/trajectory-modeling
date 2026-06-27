@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #SBATCH --job-name=hirid_circ_fail_bayes_traj
-#SBATCH --output=logs/outs/%x_%j.out
-#SBATCH --error=logs/errs/%x_%j.err
-#SBATCH --array=0-3
+#SBATCH --output=logs/outs/%x_%A_%a.out
+#SBATCH --error=logs/errs/%x_%A_%a.err
+#SBATCH --array=0-15
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=32
+#SBATCH --cpus-per-task=64
 #SBATCH --mem=96G
 #SBATCH --time=24:00:00
 #SBATCH --partition=cpu-killable
@@ -22,6 +22,9 @@ while [[ ! -f "$REPO_ROOT/pyproject.toml" && "$REPO_ROOT" != "/" ]]; do
 done
 [[ -f "$REPO_ROOT/pyproject.toml" ]] || { echo "Could not locate repo root"; exit 1; }
 
+# Cleanup pytensor cache and /dev/shm tmpdir on any exit (including SIGTERM from job timeout)
+trap 'bash "${REPO_ROOT}/scripts/slurm/cleanup_pytensor_cache.sh" 2>/dev/null || true; rm -rf "${JOB_TMP}" 2>/dev/null || true; rm -rf "/dev/shm/tamarw1_${SLURM_JOB_ID:-local}" 2>/dev/null || true' EXIT
+
 COHORT_INDEX=${SLURM_ARRAY_TASK_ID}
 WINDOW_HOURS=12.0
 N_BATCHES=8
@@ -29,29 +32,30 @@ DF_BASIS=${DF_BASIS:-4}
 SAMPLER=nutpie
 
 DATA_ROOT="${DATA_ROOT:-${TRAJ_DATA_ROOT:-/home/gaga/data/physionet}}"
+export TRAJ_CACHE_ROOT="${TRAJ_CACHE_ROOT:-/home/gaga/tamarw1}"
 export TRAJ_DATA_ROOT="$DATA_ROOT"
 LOG_ROOT="${LOG_ROOT:-$REPO_ROOT/logs}"
 mkdir -p "$LOG_ROOT/outs" "$LOG_ROOT/errs"
 
-# Keep Python, Numba, Matplotlib, and PyTensor caches off /tmp so jobs do not
-# fail when the shared temp filesystem fills up.
-CACHE_ROOT="${CACHE_ROOT:-/home/gaga/tamarw1}"
-JOB_CACHE_ROOT="$CACHE_ROOT/.cache/hirid_circ_fail_bayes/${SLURM_JOB_ID:-local}"
-mkdir -p \
-    "$JOB_CACHE_ROOT/tmp" \
-    "$JOB_CACHE_ROOT/pycache" \
-    "$JOB_CACHE_ROOT/numba" \
-    "$JOB_CACHE_ROOT/matplotlib" \
-    "$JOB_CACHE_ROOT/arviz" \
-    "$JOB_CACHE_ROOT/pytensor"
-export TMPDIR="$JOB_CACHE_ROOT/tmp"
-export TEMP="$JOB_CACHE_ROOT/tmp"
-export TMP="$JOB_CACHE_ROOT/tmp"
-export PYTHONPYCACHEPREFIX="$JOB_CACHE_ROOT/pycache"
-export NUMBA_CACHE_DIR="$JOB_CACHE_ROOT/numba"
-export MPLCONFIGDIR="$JOB_CACHE_ROOT/matplotlib"
-export ARVIZ_DATA_HOME="$JOB_CACHE_ROOT/arviz"
-export PYTENSOR_FLAGS="compiledir=$JOB_CACHE_ROOT/pytensor,base_compiledir=$JOB_CACHE_ROOT/pytensor,optimizer=fast_compile,exception_verbosity=high"
+# Route tmp*.py and other per-job temp files to /dev/shm (RAM, not NFS quota)
+# so PyTensor/Numba intermediate files never land on gaga.
+SHM_TMP="/dev/shm/tamarw1_${SLURM_JOB_ID:-local}"
+find /dev/shm -maxdepth 1 -name "tamarw1_*" -type d -mtime +1 -exec rm -rf {} + 2>/dev/null || true
+mkdir -p "$SHM_TMP"
+export TMPDIR="$SHM_TMP"
+export TEMP="$SHM_TMP"
+export TMP="$SHM_TMP"
+export PYTHONPYCACHEPREFIX="$SHM_TMP/pycache"
+# Small gaga JOB_TMP for matplotlib/arviz config only
+JOB_TMP="${TRAJ_CACHE_ROOT}/.job_tmp/hirid_cf/${SLURM_JOB_ID:-local}"
+mkdir -p "$JOB_TMP/matplotlib" "$JOB_TMP/arviz"
+export NUMBA_DISABLE_CACHING=1
+export MPLCONFIGDIR="$JOB_TMP/matplotlib"
+export ARVIZ_DATA_HOME="$JOB_TMP/arviz"
+PYTENSOR_CACHE_ROOT="${HOME}/.pytensor_cache/${SLURM_JOB_ID:-local}"
+find "${HOME}/.pytensor_cache" -maxdepth 1 -mindepth 1 -type d -mtime +1 -exec rm -rf {} + 2>/dev/null || true
+mkdir -p "$PYTENSOR_CACHE_ROOT"
+export PYTENSOR_FLAGS="base_compiledir=${PYTENSOR_CACHE_ROOT},optimizer=fast_compile,exception_verbosity=high"
 
 cd "$REPO_ROOT" || exit 1
 
@@ -72,7 +76,7 @@ echo "=========================================="
 
 python scripts/trajectory/hirid/hirid_circulatory_failure_bayes_trajectories.py \
     --cohort-index ${COHORT_INDEX} \
-    --cohort-splits 4 \
+    --cohort-splits 16 \
     --window-hours ${WINDOW_HOURS} \
     --n-batches ${N_BATCHES} \
     --df-basis ${DF_BASIS} \

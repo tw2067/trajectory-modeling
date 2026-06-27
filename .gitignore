@@ -14,6 +14,7 @@ results/
 .*.pid
 *.pt
 .ipynb_checkpoints/
+tmp*
 
 # Common Python / project ignores
 .pytest_cache/
@@ -35,8 +36,14 @@ build/
 dist/
 *.egg-info/
 
+# PyTensor CWD pollution (from nodes with full /tmp)
+pytensor_compilation_error_*
+tmp[0-9a-zA-Z_]*
+
 # Database / large data files
 *.duckdb
 *.db
 *.sqlite
 *.parquet
+
+

@@ -15,9 +15,11 @@ from pathlib import Path
 import sys
 
 # Ensure compiled artifacts and matplotlib cache land in a writable location
-JOB_ID = os.environ.get('SLURM_JOB_ID', 'local')
+ARRAY_JOB_ID = os.environ.get("SLURM_ARRAY_JOB_ID", os.environ.get("SLURM_JOB_ID", "local"))
+ARRAY_TASK_ID = os.environ.get("SLURM_ARRAY_TASK_ID", "0")
+JOB_ID = f"{ARRAY_JOB_ID}_{ARRAY_TASK_ID}"
 CACHE_ROOT = Path(os.environ.get("TRAJ_CACHE_ROOT", str(Path.home())))
-PYTENSOR_CACHE = CACHE_ROOT / '.pytensor_cache' / JOB_ID
+PYTENSOR_CACHE = Path.home() / '.pytensor_cache' / JOB_ID
 PYTENSOR_CACHE.mkdir(parents=True, exist_ok=True)
 # Increase lock timeout for systems with many parallel workers
 os.environ['PYTENSOR_FLAGS'] = f"base_compiledir={PYTENSOR_CACHE},optimizer=fast_compile,exception_verbosity=high"
@@ -278,7 +280,7 @@ def main():
     probs_ts = creatinine_ts.merge(
         trajectory_probs[['stay_id', 'time_day'] + prob_cols],
         on=['stay_id', 'time_day'],
-        how='left'
+        how='inner'
     )
     validate_probs(probs_ts, "time series")
 

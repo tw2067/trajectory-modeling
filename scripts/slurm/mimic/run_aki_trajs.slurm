@@ -17,6 +17,9 @@ done
 [[ -f "$REPO_ROOT/pyproject.toml" ]] || { echo "Could not locate repo root"; exit 1; }
 
 DATA_ROOT="${DATA_ROOT:-/home/gaga/data/physionet}"
+export TRAJ_CACHE_ROOT="${TRAJ_CACHE_ROOT:-/home/gaga/tamarw1}"
+export NUMBA_DISABLE_CACHING=1
+export PYTHONPYCACHEPREFIX="${HOME}/.pycache_slurm/${SLURM_JOB_ID:-local}"
 LOG_ROOT="${LOG_ROOT:-$REPO_ROOT/logs}"
 mkdir -p "$LOG_ROOT/outs" "$LOG_ROOT/errs"
 cd "$REPO_ROOT" || exit 1

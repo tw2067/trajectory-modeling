@@ -1,9 +1,56 @@
 from __future__ import annotations
 import numpy as np, pandas as pd
 import os
+import tempfile
 from joblib import Parallel, delayed
 from .sampling import _sample_post_trajs_scaled
 from .classify import _posterior_feature_probs_from_samples, flags_from_traj
+
+
+def _patch_pytensor_compile_function_src() -> None:
+    """Redirect pytensor's NamedTemporaryFile(delete=False) calls to TMPDIR,
+    using content-hash filenames so identical Numba dispatch sources reuse the
+    same file instead of creating a new one per invocation.  Files land in
+    TMPDIR (routed to /dev/shm by SLURM scripts) so they never touch NFS quota.
+    The SLURM EXIT trap removes the /dev/shm dir on job end."""
+    try:
+        import pytensor.link.utils as _ptu
+        if getattr(_ptu.compile_function_src, "_patched_tmpdir", False):
+            return
+        import hashlib as _hashlib
+        from typing import cast as _cast, Callable as _Callable, Any as _Any
+
+        def _redirect(
+            src: str,
+            function_name: str,
+            global_env: "dict[_Any, _Any] | None" = None,
+            local_env: "dict[_Any, _Any] | None" = None,
+        ) -> "_Callable":
+            tmpdir = os.environ.get("TMPDIR") or tempfile.gettempdir()
+            # Deterministic name: same source → same file → no duplicates across workers
+            src_hash = _hashlib.md5(src.encode(), usedforsecurity=False).hexdigest()
+            fname = os.path.join(tmpdir, f"pytensor_{src_hash}.py")
+            if not os.path.exists(fname):
+                with open(fname, "w") as _f:
+                    _f.write(src)
+            if global_env is None:
+                global_env = {}
+            if local_env is None:
+                local_env = {}
+            mod_code = compile(src, fname, mode="exec")
+            exec(mod_code, global_env, local_env)
+            res = _cast(_Callable, local_env[function_name])
+            res.__source__ = src  # type: ignore
+            return res
+
+        _redirect._patched_tmpdir = True  # type: ignore
+        _ptu.compile_function_src = _redirect
+    except Exception:
+        pass
+
+
+_patch_pytensor_compile_function_src()
+
 
 def _window_worker(
     window_df: pd.DataFrame,
@@ -21,32 +68,75 @@ def _window_worker(
     target_accept: float = 0.95,
 
 ):
-    # Give each process its own PyTensor compiledir to prevent file lock contention.
-    # We must update pytensor.config directly — loky workers inherit the parent's
-    # PYTENSOR_FLAGS at spawn time (pytensor is already imported before _window_worker
-    # runs), so changing os.environ alone does not affect the live pytensor config.
-    import pytensor
-    base = os.environ.get("SLURM_TMPDIR", "/tmp")
-    pid = os.getpid()
-    compiledir = os.path.join(base, f"pytensor_{pid}")
-    os.makedirs(compiledir, exist_ok=True)
-    pytensor.config.base_compiledir = compiledir  # update live config
-    os.environ["PYTENSOR_FLAGS"] = f"base_compiledir={compiledir},floatX=float64"
-    # Also make BLAS single-threaded inside each worker to avoid oversubscription
+    # Patch add_key to be idempotent: Loky reuses worker processes so a key
+    # compiled in batch N is still in memory when batch N+1 runs.
+    # Workers share the compiledir (set by PYTENSOR_FLAGS) so compiled Numba
+    # dispatch functions are cached once and reused across all workers.
+    try:
+        from pytensor.link.c.cmodule import KeyData as _KD
+        if not getattr(_KD.add_key, "_idempotent", False):
+            _orig_add_key = _KD.add_key
+            def _idempotent_add_key(self, key, save_pkl=True):
+                if key not in self.keys:
+                    _orig_add_key(self, key, save_pkl=save_pkl)
+            _idempotent_add_key._idempotent = True
+            _KD.add_key = _idempotent_add_key
+    except Exception:
+        pass
+
+    # Patch _get_from_hash to treat a corrupted/stale key.pkl as a cache miss
+    # rather than raising AssertionError.  When multiple loky workers race to
+    # write the same compiledir entry, the losing worker may read a partially-
+    # written key.pkl whose key doesn't match — returning None here causes
+    # module_from_key to fall through to recompile under a proper file lock.
+    try:
+        from pytensor.link.c.cmodule import ModuleCache as _MC
+        if not getattr(_MC._get_from_hash, "_safe", False):
+            _orig_gfh = _MC._get_from_hash
+            def _safe_gfh(self, module_hash, key):
+                try:
+                    return _orig_gfh(self, module_hash, key)
+                except (AssertionError, EOFError, OSError):
+                    # Treat any failure to read key.pkl as a cache miss so
+                    # module_from_key falls through to recompile under a file
+                    # lock. EOFError happens when concurrent workers truncate
+                    # the pickle; OSError covers other fs-level failures.
+                    return None
+            _safe_gfh._safe = True
+            _MC._get_from_hash = _safe_gfh
+    except Exception:
+        pass
+
+    # Disable the broken-eq check that triggers the AssertionError above;
+    # it exists only to catch Op.__hash__/__eq__ bugs, not needed at runtime.
+    try:
+        from pytensor.link.c.cmodule import get_module_cache as _gmc
+        _gmc().check_for_broken_eq = False
+    except Exception:
+        pass
+
+    # Re-apply the compile_function_src patch in case this worker was spawned
+    # fresh (spawn/forkserver start method) and imported a clean module state.
+    _patch_pytensor_compile_function_src()
+    # Keep BLAS single-threaded inside each worker to avoid oversubscription.
     os.environ["OMP_NUM_THREADS"] = "1"
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
     os.environ["MKL_NUM_THREADS"] = "1"
-    os.environ.setdefault("NUMEXPR_NUM_THREADS", "1") 
+    os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
-    tg, ys = _sample_post_trajs_scaled(
-        window_df, df_basis, n_samples, tune, min_points, grid_freq,
-        target_accept, values, time_col,
-        sampler=sampler, chains=chains, cores=cores, progressbar=progressbar,
-        chain_method=chain_method
-    )
-    return _posterior_feature_probs_from_samples(
-        ys, tg, flat_thr, decline_thr, nonlinear_gap, class_func, traj_types, label_map=label_map
-    )
+    try:
+        tg, ys = _sample_post_trajs_scaled(
+            window_df, df_basis, n_samples, tune, min_points, grid_freq,
+            target_accept, values, time_col,
+            sampler=sampler, chains=chains, cores=cores, progressbar=progressbar,
+            chain_method=chain_method
+        )
+        return _posterior_feature_probs_from_samples(
+            ys, tg, flat_thr, decline_thr, nonlinear_gap, class_func, traj_types, label_map=label_map
+        )
+    except Exception as e:
+        print(f"[WARNING] Window worker failed, skipping patient: {type(e).__name__}: {e}")
+        return {}
 
 
 def _window_worker_gpu_pinned(

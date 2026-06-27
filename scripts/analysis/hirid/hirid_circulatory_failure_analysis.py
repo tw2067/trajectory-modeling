@@ -553,6 +553,7 @@ def main():
 
     pred_stem_candidates = [
         "circulatory_failure_prediction_dataset_with_bootstrap_probs",
+        "circulatory_failure_prediction_dataset_with_probs",
         "circulatory_failure_prediction_dataset",
     ]
 

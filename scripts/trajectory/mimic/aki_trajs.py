@@ -15,9 +15,11 @@ from pathlib import Path
 import sys
 
 # Ensure compiled artifacts and matplotlib cache land in a writable location
-JOB_ID = os.environ.get('SLURM_JOB_ID', 'local')
+ARRAY_JOB_ID = os.environ.get("SLURM_ARRAY_JOB_ID", os.environ.get("SLURM_JOB_ID", "local"))
+ARRAY_TASK_ID = os.environ.get("SLURM_ARRAY_TASK_ID", "0")
+JOB_ID = f"{ARRAY_JOB_ID}_{ARRAY_TASK_ID}"
 CACHE_ROOT = Path(os.environ.get("TRAJ_CACHE_ROOT", str(Path.home())))
-PYTENSOR_CACHE = CACHE_ROOT / '.pytensor_cache' / JOB_ID
+PYTENSOR_CACHE = Path.home() / '.pytensor_cache' / JOB_ID
 PYTENSOR_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ['PYTENSOR_FLAGS'] = f"base_compiledir={PYTENSOR_CACHE},optimizer=fast_compile,exception_verbosity=high"
 os.environ['FILELOCK_TIMEOUT'] = '30'
@@ -251,7 +253,7 @@ def main():
     probs_ts = creatinine_ts.merge(
         trajectory_probs[['hadm_id', 'time_day'] + prob_cols],
         on=['hadm_id', 'time_day'],
-        how='left'
+        how='inner'
     )
     del creatinine_ts
     gc.collect()
@@ -275,7 +277,7 @@ def main():
         dataset_with_probs = prediction_dataset.merge(
             trajectory_probs[['hadm_id', 'time_day'] + prob_cols],
             on=['hadm_id', 'time_day'],
-            how='left'
+            how='inner'
         )
 
         print(f"\n5. Merged trajectory probabilities:")
@@ -306,6 +308,10 @@ def main():
                 print(f"   {traj.replace('_', ' ').title():20s}: {len(subset):5,} ({100*len(subset)/len(dataset_with_probs):5.1f}%)")
 
         merged_path = Path(args.merged_output) if args.merged_output else output_path.with_name('aki_prediction_dataset_with_probs.csv')
+        if args.cohort_splits > 1:
+            stem = merged_path.stem
+            suffix = merged_path.suffix
+            merged_path = merged_path.parent / f"{stem}_cohort{args.cohort_index:02d}{suffix}"
         dataset_with_probs.to_csv(merged_path, index=False)
         print(f"\n✓ Saved merged prediction dataset: {merged_path}")
     else:

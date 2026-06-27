@@ -87,27 +87,31 @@ def _sample_post_trajs_scaled(
                 print(f"[WARNING] JAX sampler ({sampler}) unavailable: {e}. Falling back.")
 
         if trace is None and (sampler == "nutpie" or sampler in ("numpyro", "blackjax")):
-            try:
-                import nutpie
-                compiled = nutpie.compile_pymc_model(m)
-                trace = nutpie.sample(
-                    compiled,
-                    chains=chains,
-                    draws=n_samples,
-                    tune=tune,
-                    target_accept=target_accept,
-                    seed=SEED,
-                )
-                print("[INFO] Using nutpie sampler (CPU)")
-            except Exception as e:
-                print(f"[WARNING] Nutpie sampling failed: {e}")
+            import nutpie
+            compiled = nutpie.compile_pymc_model(m)
+            trace = nutpie.sample(
+                compiled,
+                chains=chains,
+                draws=n_samples,
+                tune=tune,
+                target_accept=target_accept,
+                seed=SEED,
+            )
+            print("[INFO] Using nutpie sampler (CPU)")
 
         if trace is None:
-            trace = pm.sample(
-                draws=n_samples, tune=tune, chains=chains, cores=cores,
-                target_accept=target_accept, init="jitter+adapt_diag",
-                random_seed=SEED, progressbar=progressbar
-            )
+            # Only reached when sampler == "pymc" explicitly
+            try:
+                trace = pm.sample(
+                    draws=n_samples, tune=tune, chains=chains, cores=cores,
+                    target_accept=target_accept, init="jitter+adapt_diag",
+                    random_seed=SEED, progressbar=progressbar
+                )
+            except Exception as e:
+                print(f"[WARNING] PyMC sampling also failed: {e}")
+
+        if trace is None:
+            raise RuntimeError("All samplers failed for this window.")
 
     post = trace.posterior["beta"].stack(sample=("chain","draw"))
     if "sample" not in post.dims or post.dims[0] != "sample":

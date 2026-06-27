@@ -17,9 +17,11 @@ from pathlib import Path
 import sys
 
 # Ensure compiled artifacts and matplotlib cache land in a writable location
-JOB_ID = os.environ.get('SLURM_JOB_ID', 'local')
+ARRAY_JOB_ID = os.environ.get("SLURM_ARRAY_JOB_ID", os.environ.get("SLURM_JOB_ID", "local"))
+ARRAY_TASK_ID = os.environ.get("SLURM_ARRAY_TASK_ID", "0")
+JOB_ID = f"{ARRAY_JOB_ID}_{ARRAY_TASK_ID}"
 CACHE_ROOT = Path(os.environ.get("TRAJ_CACHE_ROOT", str(Path.home())))
-PYTENSOR_CACHE = CACHE_ROOT / '.pytensor_cache' / JOB_ID
+PYTENSOR_CACHE = Path.home() / '.pytensor_cache' / JOB_ID
 PYTENSOR_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ['PYTENSOR_FLAGS'] = f"compiledir={PYTENSOR_CACHE},base_compiledir={PYTENSOR_CACHE},optimizer=fast_compile,exception_verbosity=high"
 
@@ -33,6 +35,7 @@ _DATA_ROOT = os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet")
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['MKL_NUM_THREADS'] = '1'
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
+N_JOBS = int(os.environ.get('SLURM_CPUS_PER_TASK', -1))
 
 sys.path.insert(0, os.path.abspath('src'))
 
@@ -132,6 +135,8 @@ def compute_biomarker(
     flat_thr_override: float | None = None,
     decline_thr_override: float | None = None,
     nonlinear_gap_override: float | None = None,
+    df_basis: int = 5,
+    sampler: str = 'pymc',
 ):
     cfg_defaults = BIOMARKER_CONFIG[biomarker]
     value_col = value_col_override or cfg_defaults['value_col']
@@ -176,7 +181,7 @@ def compute_biomarker(
 
     config = BayesConfig(
         window_years=window_hours,
-        df_basis=5,
+        df_basis=df_basis,
         n_samples=200,
         tune=300,
         min_points_per_window=4,
@@ -192,7 +197,7 @@ def compute_biomarker(
         sampler=sampler,
         target_accept=0.99,
         chains=4,
-        n_jobs=-1,
+        n_jobs=N_JOBS,
         class_func=cfg_defaults['class_func'],
         traj_types=cfg_defaults['traj_types'],
         label_map=cfg_defaults['label_map'],
@@ -205,7 +210,6 @@ def compute_biomarker(
     print(f"   Change threshold: {decline_thr}")
     print(f"   Nonlinear gap: {nonlinear_gap}")
 
-    precompile_pytensor_functions(config)
 
     traj_model = BayesianTrajPS(cfg=config)
 
@@ -241,7 +245,7 @@ def compute_biomarker(
     probs_ts = ts_df.merge(
         trajectory_probs[['hadm_id', 'time_hour'] + prob_cols],
         on=['hadm_id', 'time_hour'],
-        how='left'
+        how='inner'
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -287,6 +291,8 @@ def main():
                         help='Which cohort split to process (0-indexed)')
     parser.add_argument('--sampler', type=str, choices=['pymc', 'numpyro', 'nutpie'], default='pymc',
                         help='Sampler backend for Bayesian inference (default: pymc)')
+    parser.add_argument('--df-basis', type=int, default=5,
+                        help='Spline basis degrees of freedom for BayesConfig (default: 5)')
 
     args = parser.parse_args()
 
@@ -329,6 +335,8 @@ def main():
                 window_hours=args.window_hours,
                 n_batches=args.n_batches,
                 cohort_patients=cohort_patients,
+                df_basis=args.df_basis,
+                sampler=args.sampler,
             )
 
             if traj_probs is None:
@@ -409,6 +417,8 @@ def main():
         flat_thr_override=args.flat_thr,
         decline_thr_override=args.decline_thr,
         nonlinear_gap_override=args.nonlinear_gap,
+        df_basis=args.df_basis,
+        sampler=args.sampler,
     )
 
     if traj_probs is None:

@@ -81,6 +81,7 @@ def load_data(base_dir: Path):
     # Load prediction dataset
     pred_stem_candidates = [
         'circulatory_failure_prediction_dataset_with_bootstrap_probs',
+        'circulatory_failure_prediction_dataset_with_probs',
         'circulatory_failure_prediction_dataset',
     ]
     for _stem in pred_stem_candidates:
