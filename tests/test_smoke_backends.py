@@ -1,7 +1,8 @@
 """
 Smoke tests for traj_features backends.
 
-Fast tests (no marker): import checks, config field checks, sampler path logic.
+Fast tests (no marker): import checks, config field checks, sampler path logic,
+                        PS-removal checks, backward-compat alias checks.
 Slow tests (@pytest.mark.slow): end-to-end MCMC runs on synthetic data.
 GPU tests  (@pytest.mark.gpu):  numpyro/JAX path — requires JAX + GPU node.
 
@@ -34,14 +35,14 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 # ============================================================================
 
 def test_bayes_imports():
-    from traj_features.backends.bayes import BayesianTrajPS, BayesConfig
+    from traj_features.backends.bayes import BayesianTraj, BayesConfig
     from traj_features.backends.bayes.classify import flags_from_traj, pos_flags_from_traj
     from traj_features.backends.bayes.sampling import _sample_post_trajs_scaled
     from traj_features.backends.bayes.pipeline import compute_time_varying_trajectory_covariates_parallel
 
 
 def test_bootstrap_imports():
-    from traj_features.backends.bootstrap import BootstrapTrajPS, BootstrapConfig
+    from traj_features.backends.bootstrap import BootstrapTraj, BootstrapConfig
 
 
 def test_analysis_imports():
@@ -79,6 +80,84 @@ def test_eicu_loader_not_in_src():
 
 
 # ============================================================================
+# PS removal checks
+# ============================================================================
+
+def test_bayesian_traj_has_no_fit_method():
+    """fit() was part of the removed propensity score / Cox model workflow."""
+    from traj_features.backends.bayes import BayesianTraj
+    assert not hasattr(BayesianTraj, "fit"), \
+        "BayesianTraj.fit() still exists — PS code not fully removed"
+
+
+def test_bayesian_traj_has_no_ps_method():
+    """ps() was part of the removed propensity score / Cox model workflow."""
+    from traj_features.backends.bayes import BayesianTraj
+    assert not hasattr(BayesianTraj, "ps"), \
+        "BayesianTraj.ps() still exists — PS code not fully removed"
+
+
+def test_bayesian_traj_has_no_save_method():
+    """save() was part of the removed propensity score / Cox model workflow."""
+    from traj_features.backends.bayes import BayesianTraj
+    assert not hasattr(BayesianTraj, "save"), \
+        "BayesianTraj.save() still exists — PS code not fully removed"
+
+
+def test_bayesian_traj_has_no_load_method():
+    """load() was part of the removed propensity score / Cox model workflow."""
+    from traj_features.backends.bayes import BayesianTraj
+    assert not hasattr(BayesianTraj, "load"), \
+        "BayesianTraj.load() still exists — PS code not fully removed"
+
+
+def test_bootstrap_traj_has_no_fit_method():
+    """fit() was part of the removed propensity score / Cox model workflow."""
+    from traj_features.backends.bootstrap import BootstrapTraj
+    assert not hasattr(BootstrapTraj, "fit"), \
+        "BootstrapTraj.fit() still exists — PS code not fully removed"
+
+
+def test_no_lifelines_import():
+    """lifelines (survival analysis) was only used by the removed Cox model code."""
+    import traj_features.backends.bayes.model  # noqa: F401
+    import traj_features.backends.bootstrap.model  # noqa: F401
+
+    lifelines_modules = [m for m in sys.modules if "lifelines" in m]
+    assert not lifelines_modules, \
+        f"lifelines was imported as a side-effect of loading traj_features: {lifelines_modules}"
+
+
+# ============================================================================
+# Backward-compat alias checks
+# ============================================================================
+
+def test_backward_compat_alias_bayes():
+    """BayesianTrajPS must be an alias for BayesianTraj (not a separate class)."""
+    from traj_features.backends.bayes import BayesianTraj, BayesianTrajPS
+    assert BayesianTrajPS is BayesianTraj, \
+        "BayesianTrajPS is not the same object as BayesianTraj"
+
+
+def test_backward_compat_alias_bootstrap():
+    """BootstrapTrajPS must be an alias for BootstrapTraj (not a separate class)."""
+    from traj_features.backends.bootstrap import BootstrapTraj, BootstrapTrajPS
+    assert BootstrapTrajPS is BootstrapTraj, \
+        "BootstrapTrajPS is not the same object as BootstrapTraj"
+
+
+def test_backward_compat_alias_from_top_level():
+    """Both old and new names must be importable from the top-level traj_features package."""
+    import traj_features
+    BayesianTraj = traj_features.BayesianTraj
+    BayesianTrajPS = traj_features.BayesianTrajPS
+    BootstrapTraj = traj_features.BootstrapTraj
+    BootstrapTrajPS = traj_features.BootstrapTrajPS
+    assert BayesianTrajPS is BayesianTraj
+    assert BootstrapTrajPS is BootstrapTraj
+
+
+# ============================================================================
 # BayesConfig field checks
 # ============================================================================
 
@@ -104,9 +183,24 @@ def test_bayesconfig_custom_values_roundtrip():
     assert cfg.n_samples == 50
 
 
+def test_bayesconfig_default_sampler_is_pymc():
+    """Default sampler must be 'pymc' — ensures container default is correct."""
+    from traj_features.backends.bayes import BayesConfig
+    cfg = BayesConfig()
+    assert cfg.sampler == "pymc", \
+        f"Default sampler is '{cfg.sampler}', expected 'pymc'"
+
+
+def test_bayesconfig_default_use_gpu_is_false():
+    """Default use_gpu must be False — container is CPU-only."""
+    from traj_features.backends.bayes import BayesConfig
+    cfg = BayesConfig()
+    assert cfg.use_gpu is False
+
+
 def test_batch_size_and_chain_method_wired_through_embed(monkeypatch):
-    """Verify BayesianTrajPS.embed() passes batch_size and chain_method to the pipeline."""
-    from traj_features.backends.bayes import BayesConfig, BayesianTrajPS
+    """Verify BayesianTraj.embed() passes batch_size and chain_method to the pipeline."""
+    from traj_features.backends.bayes import BayesConfig, BayesianTraj
     import traj_features.backends.bayes.model as model_mod
 
     captured = {}
@@ -121,7 +215,7 @@ def test_batch_size_and_chain_method_wired_through_embed(monkeypatch):
         batch_size=123, chain_method="parallel",
         sampler="pymc", use_gpu=False, n_jobs=1,
     )
-    model = BayesianTrajPS(cfg=cfg)
+    model = BayesianTraj(cfg=cfg)
     model.embed(pd.DataFrame({"patientid": [], "time": [], "lab_value": []}))
 
     assert captured.get("batch_size") == 123, \
@@ -136,27 +230,61 @@ def test_batch_size_and_chain_method_wired_through_embed(monkeypatch):
 
 def test_explicit_sampler_not_overridden_nutpie():
     """If user sets sampler='nutpie' explicitly, auto-detection must not change it."""
-    from traj_features.backends.bayes import BayesConfig, BayesianTrajPS
+    from traj_features.backends.bayes import BayesConfig, BayesianTraj
     cfg = BayesConfig(sampler="nutpie", use_gpu=False)
-    model = BayesianTrajPS(cfg=cfg)
+    model = BayesianTraj(cfg=cfg)
     assert model.cfg.sampler == "nutpie"
 
 
 def test_explicit_sampler_not_overridden_numpyro():
     """If user sets sampler='numpyro' explicitly, auto-detection must not change it."""
-    from traj_features.backends.bayes import BayesConfig, BayesianTrajPS
+    from traj_features.backends.bayes import BayesConfig, BayesianTraj
     cfg = BayesConfig(sampler="numpyro", use_gpu=True)
-    model = BayesianTrajPS(cfg=cfg)
+    model = BayesianTraj(cfg=cfg)
     assert model.cfg.sampler == "numpyro"
 
 
-def test_auto_detection_cpu_selects_valid_sampler():
-    """With use_gpu=False and sampler='pymc', auto-detection should pick nutpie or pymc."""
-    from traj_features.backends.bayes import BayesConfig, BayesianTrajPS
+def test_auto_detection_cpu_stays_pymc():
+    """With use_gpu=False and sampler='pymc', auto-detection must leave sampler as 'pymc'.
+
+    Previously auto-selected nutpie; that logic was removed. CPU path now always
+    stays on pymc (which is accelerated by g++ via PyTensor when g++ is available).
+    """
+    from traj_features.backends.bayes import BayesConfig, BayesianTraj
     cfg = BayesConfig(sampler="pymc", use_gpu=False)
-    model = BayesianTrajPS(cfg=cfg)
-    assert model.cfg.sampler in ("pymc", "nutpie"), \
-        f"Unexpected sampler after CPU auto-detection: {model.cfg.sampler}"
+    model = BayesianTraj(cfg=cfg)
+    assert model.cfg.sampler == "pymc", \
+        f"CPU auto-detection changed sampler to '{model.cfg.sampler}', expected 'pymc'"
+
+
+def test_gpu_flag_attempts_numpyro_upgrade(monkeypatch):
+    """With use_gpu=True and sampler='pymc', auto-detection should attempt numpyro."""
+    import types
+    import builtins
+
+    fake_jax = types.SimpleNamespace(
+        sample_numpyro_nuts=lambda **kw: None,
+    )
+    original_import = builtins.__import__
+
+    def mock_import(name, *args, **kwargs):
+        if name == "pymc.sampling.jax":
+            return fake_jax
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import)
+
+    from traj_features.backends.bayes import BayesConfig
+    # Re-import to pick up the monkeypatched import
+    import importlib
+    import traj_features.backends.bayes.model as m
+    importlib.reload(m)
+    BayesianTraj = m.BayesianTraj
+
+    cfg = BayesConfig(sampler="pymc", use_gpu=True)
+    model = BayesianTraj(cfg=cfg)
+    assert model.cfg.sampler == "numpyro", \
+        f"GPU auto-detection did not select numpyro; got '{model.cfg.sampler}'"
 
 
 # ============================================================================
@@ -177,16 +305,10 @@ def test_jax_trace_not_overwritten_by_cpu(monkeypatch):
     sentinel = object()  # unique object that only numpyro "returns"
     cpu_sample_called = []
 
-    # Patch pymc.sampling.jax so it looks importable and returns our sentinel
     fake_sj = types.SimpleNamespace(
         sample_numpyro_nuts=lambda **kw: sentinel,
         sample_blackjax_nuts=lambda **kw: sentinel,
     )
-
-    def fake_import(name, *args, **kwargs):
-        if name == "pymc.sampling.jax":
-            return fake_sj
-        return original_import(name, *args, **kwargs)
 
     import builtins
     original_import = builtins.__import__
@@ -196,7 +318,6 @@ def test_jax_trace_not_overwritten_by_cpu(monkeypatch):
             return fake_sj
         return original_import(name, *args, **kwargs)
 
-    # Patch pm.sample to detect if it gets called
     original_pm_sample = pm.sample
 
     def spy_pm_sample(*args, **kwargs):
@@ -206,15 +327,10 @@ def test_jax_trace_not_overwritten_by_cpu(monkeypatch):
     monkeypatch.setattr(pm, "sample", spy_pm_sample)
     monkeypatch.setattr(builtins, "__import__", mock_import)
 
-    # Build minimal input
     df = _make_synthetic_window(n_points=8)
 
     try:
         from traj_features.backends.bayes.sampling import _sample_post_trajs_scaled
-        # This will try the numpyro path — with our fake it returns sentinel immediately
-        # Then the fixed code should NOT fall through to pm.sample()
-        # (The actual sampling call will fail because sentinel isn't a real trace,
-        #  but we can check whether pm.sample was invoked)
         try:
             _sample_post_trajs_scaled(
                 df, df_basis=4, n_samples=5, tune=5, min_points=5,
@@ -233,7 +349,7 @@ def test_jax_trace_not_overwritten_by_cpu(monkeypatch):
 
 
 # ============================================================================
-# End-to-end CPU smoke test
+# Helpers for end-to-end tests
 # ============================================================================
 
 def _make_synthetic_window(n_points: int = 8, seed: int = 0) -> pd.DataFrame:
@@ -264,10 +380,14 @@ def _make_synthetic_cohort(n_patients: int = 4, n_timepoints: int = 8, seed: int
     return pd.DataFrame(rows)
 
 
+# ============================================================================
+# End-to-end CPU smoke test
+# ============================================================================
+
 @pytest.mark.slow
 def test_bayesian_embed_cpu_pymc():
     """Full embed() call on synthetic data, forcing CPU PyMC (sampler='pymc', use_gpu=False)."""
-    from traj_features.backends.bayes import BayesConfig, BayesianTrajPS
+    from traj_features.backends.bayes import BayesConfig, BayesianTraj
     from traj_features.backends.bayes.classify import pos_flags_from_traj
 
     df = _make_synthetic_cohort(n_patients=3, n_timepoints=8)
@@ -302,9 +422,8 @@ def test_bayesian_embed_cpu_pymc():
         },
     )
 
-    model = BayesianTrajPS(cfg=cfg)
-    # Force pymc even if nutpie is installed (we want to test this path specifically)
-    model.cfg.sampler = "pymc"
+    model = BayesianTraj(cfg=cfg)
+    model.cfg.sampler = "pymc"  # force pymc even if nutpie is installed
 
     t0 = time.time()
     result = model.embed(df)
@@ -342,7 +461,7 @@ def test_bayesian_embed_numpyro():
     except ImportError:
         pytest.skip("pymc.sampling.jax not available")
 
-    from traj_features.backends.bayes import BayesConfig, BayesianTrajPS
+    from traj_features.backends.bayes import BayesConfig, BayesianTraj
     from traj_features.backends.bayes.classify import pos_flags_from_traj
 
     df = _make_synthetic_cohort(n_patients=3, n_timepoints=8)
@@ -377,7 +496,7 @@ def test_bayesian_embed_numpyro():
         },
     )
 
-    model = BayesianTrajPS(cfg=cfg)
+    model = BayesianTraj(cfg=cfg)
     assert model.cfg.sampler == "numpyro", \
         f"sampler was changed from 'numpyro' to '{model.cfg.sampler}' — auto-detection override bug"
 

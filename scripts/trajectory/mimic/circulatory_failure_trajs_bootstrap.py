@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.abspath('src'))
 
 _DATA_ROOT = os.environ.get("TRAJ_DATA_ROOT", "/home/gaga/data/physionet")
 
-from traj_features.backends.bootstrap import BootstrapTrajPS, BootstrapConfig
+from traj_features.backends.bootstrap import BootstrapTraj, BootstrapConfig
 from traj_features.backends.bayes.classify import pos_flags_from_traj, flags_from_traj
 
 
@@ -179,7 +179,7 @@ def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window
     print(f"   Change threshold: {config_dict['decline_thr']}")
     print(f"   Nonlinear gap: {config_dict['nonlinear_gap']}")
 
-    traj_model = BootstrapTrajPS(cfg=config)
+    traj_model = BootstrapTraj(cfg=config)
 
     patients = traj_input['patientid'].unique()
     npts = patients.size

@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # Remove PyTensor cache for this SLURM job and prune old cache dirs.
-# Handles both TRAJ_CACHE_ROOT (gaga home) and HOME-based paths.
+# PyTensor cache is routed to TRAJ_CACHE_ROOT (gaga home, ~150 GB quota)
+# not $HOME (CS home, 4 GB quota).
 
 set -euo pipefail
 
 HOME_DIR=${HOME:-$(eval echo ~${USER:-$(whoami)})}
-# Pytensor cache is now routed to $HOME (not gaga) to avoid quota exhaustion.
-PYTENSOR_CACHE_DIR="${HOME_DIR}/.pytensor_cache"
-# Keep CACHE_BASE for legacy gaga-based cache cleanup.
 CACHE_BASE="${TRAJ_CACHE_ROOT:-$HOME_DIR}"
+PYTENSOR_CACHE_DIR="${CACHE_BASE}/.pytensor_cache"
 
 echo "[cleanup_pytensor_cache] running cleanup for job ${SLURM_JOB_ID:-unknown}"
 
@@ -31,12 +30,6 @@ if [ -d "$PYTENSOR_CACHE_DIR" ]; then
     fi
     echo "[cleanup_pytensor_cache] pruning cache dirs older than 1 day in $PYTENSOR_CACHE_DIR"
     find "$PYTENSOR_CACHE_DIR" -maxdepth 1 -mindepth 1 -type d -mtime +1 -print -exec rm -rf {} + || true
-fi
-
-# Clean legacy gaga-based pytensor cache dirs (used before HOME migration).
-GAGA_PYTENSOR="${CACHE_BASE}/.pytensor_cache"
-if [ -d "$GAGA_PYTENSOR" ]; then
-    find "$GAGA_PYTENSOR" -maxdepth 1 -mindepth 1 -type d -mtime +1 -print -exec rm -rf {} + 2>/dev/null || true
 fi
 
 # Also clean HiRID-style per-job pytensor dirs (CACHE_BASE/.pytensor_{job_id})

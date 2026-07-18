@@ -87,20 +87,22 @@ def _sample_post_trajs_scaled(
                 print(f"[WARNING] JAX sampler ({sampler}) unavailable: {e}. Falling back.")
 
         if trace is None and (sampler == "nutpie" or sampler in ("numpyro", "blackjax")):
-            import nutpie
-            compiled = nutpie.compile_pymc_model(m)
-            trace = nutpie.sample(
-                compiled,
-                chains=chains,
-                draws=n_samples,
-                tune=tune,
-                target_accept=target_accept,
-                seed=SEED,
-            )
-            print("[INFO] Using nutpie sampler (CPU)")
+            try:
+                import nutpie
+                compiled = nutpie.compile_pymc_model(m)
+                trace = nutpie.sample(
+                    compiled,
+                    chains=chains,
+                    draws=n_samples,
+                    tune=tune,
+                    target_accept=target_accept,
+                    seed=SEED,
+                )
+                print("[INFO] Using nutpie sampler (CPU)")
+            except Exception as e:
+                print(f"[WARNING] Nutpie sampling failed: {e}. Falling back to PyMC.")
 
         if trace is None:
-            # Only reached when sampler == "pymc" explicitly
             try:
                 trace = pm.sample(
                     draws=n_samples, tune=tune, chains=chains, cores=cores,

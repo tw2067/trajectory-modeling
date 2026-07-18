@@ -9,6 +9,7 @@
 #SBATCH --mem=96G
 #SBATCH --time=24:00:00
 #SBATCH --partition=cpu-killable
+#SBATCH --exclude=rack-iscb-101,rack-iscb-33,rack-iscb-112
 
 # eICU Circulatory Failure Bayesian Trajectory Generation
 # Run: sbatch scripts/slurm/eicu/run_eicu_circulatory_failure_bayes_trajectories.slurm
@@ -46,13 +47,14 @@ export TMPDIR="$SHM_TMP"
 export TEMP="$SHM_TMP"
 export TMP="$SHM_TMP"
 export PYTHONPYCACHEPREFIX="$SHM_TMP/pycache"
-# Small gaga JOB_TMP for matplotlib config only
 JOB_TMP="${TRAJ_CACHE_ROOT}/.job_tmp/eicu_cf/${SLURM_JOB_ID:-local}"
-mkdir -p "$JOB_TMP/matplotlib"
+mkdir -p "$JOB_TMP/matplotlib" "$JOB_TMP/arviz" "$JOB_TMP/xdg_cache/arviz"
 export NUMBA_DISABLE_CACHING=1
 export MPLCONFIGDIR="$JOB_TMP/matplotlib"
-PYTENSOR_CACHE_ROOT="${HOME}/.pytensor_cache/${SLURM_JOB_ID:-local}"
-find "${HOME}/.pytensor_cache" -maxdepth 1 -mindepth 1 -type d -mtime +1 -exec rm -rf {} + 2>/dev/null || true
+export ARVIZ_DATA_HOME="$JOB_TMP/arviz"
+export XDG_CACHE_HOME="$JOB_TMP/xdg_cache"
+PYTENSOR_CACHE_ROOT="${TRAJ_CACHE_ROOT}/.pytensor_cache/${SLURM_JOB_ID:-local}"
+find "${TRAJ_CACHE_ROOT}/.pytensor_cache" -maxdepth 1 -mindepth 1 -type d -mtime +1 -exec rm -rf {} + 2>/dev/null || true
 mkdir -p "$PYTENSOR_CACHE_ROOT"
 export PYTENSOR_FLAGS="base_compiledir=${PYTENSOR_CACHE_ROOT},optimizer=fast_compile,exception_verbosity=high"
 

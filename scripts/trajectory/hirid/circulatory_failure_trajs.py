@@ -20,14 +20,17 @@ import pandas as pd
 code_dir = Path(__file__).parent.parent / 'code'
 sys.path.insert(0, str(code_dir))
 
-from traj_features.backends.bayes import BayesianTrajPS, BayesConfig
+from traj_features.backends.bayes import BayesianTraj, BayesConfig
 from traj_features.backends.bayes.classify import flags_from_traj, pos_flags_from_traj
 
-# Use job-specific compile directory to avoid lock contention
+# Use job-specific compile directory to avoid lock contention.
+# Route to TRAJ_CACHE_ROOT (gaga home, ~150 GB quota) not Path.home()
+# which resolves to the CS home (4 GB quota, fills up fast).
 array_job_id = os.environ.get('SLURM_ARRAY_JOB_ID', os.environ.get('SLURM_JOB_ID', 'local'))
 array_task_id = os.environ.get('SLURM_ARRAY_TASK_ID', '0')
 job_id = f"{array_job_id}_{array_task_id}"
-pytensor_cache = Path.home() / '.pytensor_cache' / job_id
+_cache_root = Path(os.environ.get('TRAJ_CACHE_ROOT', str(Path.home())))
+pytensor_cache = _cache_root / '.pytensor_cache' / job_id
 pytensor_cache.mkdir(parents=True, exist_ok=True)
 os.environ['PYTENSOR_FLAGS'] = (
     f"base_compiledir={pytensor_cache},"
@@ -117,7 +120,7 @@ def parse_args() -> argparse.Namespace:
         type=str,
         choices=['pymc', 'numpyro', 'nutpie'],
         default='nutpie',
-        help='Sampler backend for BayesianTrajPS (default: pymc)'
+        help='Sampler backend for BayesianTraj (default: nutpie; use pymc in container)'
     )
 
     parser.add_argument(
@@ -300,7 +303,7 @@ def _compute_biomarker_probs(spec: BiomarkerSpec, n_batches: int, cohort_patient
     print(f"Patients: {df['patientid'].nunique():,}")
     print(f"Measurements: {len(df):,}")
 
-    model = BayesianTrajPS(cfg=spec.config)
+    model = BayesianTraj(cfg=spec.config)
 
     patients = df['patientid'].unique()
     npts = patients.size
@@ -370,7 +373,7 @@ def main():
     for spec in specs.values():
         if args.cohort_splits > 1:
             spec.output_path = spec.output_path.parent / f"{spec.output_path.stem}_cohort{args.cohort_index:02d}{spec.output_path.suffix}"
-        if spec.output_path.exists():
+        if spec.output_path.exists() and spec.output_path.stat().st_size > 0:
             print(f"✓ Skipping {spec.name} — output already exists: {spec.output_path}")
             continue
         _compute_biomarker_probs(spec, args.n_batches, cohort_patients)

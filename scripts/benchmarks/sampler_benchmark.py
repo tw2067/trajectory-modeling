@@ -62,7 +62,7 @@ def make_cohort(n_patients: int = N_PATIENTS,
 
 
 def run_benchmark(sampler: str) -> dict:
-    from traj_features.backends.bayes import BayesConfig, BayesianTrajPS
+    from traj_features.backends.bayes import BayesConfig, BayesianTraj
     from traj_features.backends.bayes.classify import pos_flags_from_traj
 
     use_gpu = sampler == "numpyro"
@@ -97,7 +97,7 @@ def run_benchmark(sampler: str) -> dict:
         },
     )
 
-    model = BayesianTrajPS(cfg=cfg)
+    model = BayesianTraj(cfg=cfg)
     # Respect explicit sampler choice — don't let auto-detection override it
     model.cfg.sampler = sampler
 

@@ -353,7 +353,7 @@ class TrajectoryAnalysis:
             logger.info(f"    Recomputing bootstrap trajectories and overwriting: {output_path.name}")
 
         try:
-            from traj_features.backends.bootstrap import BootstrapTrajPS, BootstrapConfig
+            from traj_features.backends.bootstrap import BootstrapTraj, BootstrapConfig
             from traj_features.backends.bayes.classify import flags_from_traj, pos_flags_from_traj
         except Exception as e:
             logger.warning(f"    Bootstrap backend unavailable for {biomarker}: {e}")
@@ -400,7 +400,7 @@ class TrajectoryAnalysis:
             return None
 
         logger.info(f"    Computing bootstrap trajectories ({biomarker})...")
-        model = BootstrapTrajPS(
+        model = BootstrapTraj(
             BootstrapConfig(
                 window_years=float(boot_cfg.get("window", lookback_value)),
                 n_bootstrap=int(boot_cfg.get("n_bootstrap", getattr(self.config, "BOOTSTRAP_N", 1000))),

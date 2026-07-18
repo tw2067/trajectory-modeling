@@ -24,7 +24,7 @@ os.environ['OPENBLAS_NUM_THREADS'] = '4'
 
 sys.path.insert(0, os.path.abspath('src'))
 
-from traj_features.backends.bootstrap import BootstrapTrajPS, BootstrapConfig
+from traj_features.backends.bootstrap import BootstrapTraj, BootstrapConfig
 from traj_features.backends.bayes.classify import pos_flags_from_traj, flags_from_traj
 
 
@@ -177,7 +177,7 @@ def compute_biomarker_trajectories(biomarker_name, config_dict, data_dir, window
     print(f"   Change threshold: {config_dict['decline_thr']}")
     print(f"   Nonlinear gap: {config_dict['nonlinear_gap']}")
 
-    traj_model = BootstrapTrajPS(cfg=config)
+    traj_model = BootstrapTraj(cfg=config)
 
     patients = traj_input['patientid'].unique()
     npts = patients.size

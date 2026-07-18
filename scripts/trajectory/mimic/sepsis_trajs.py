@@ -21,7 +21,7 @@ ARRAY_JOB_ID = os.environ.get("SLURM_ARRAY_JOB_ID", os.environ.get("SLURM_JOB_ID
 ARRAY_TASK_ID = os.environ.get("SLURM_ARRAY_TASK_ID", "0")
 JOB_ID = f"{ARRAY_JOB_ID}_{ARRAY_TASK_ID}"
 CACHE_ROOT = Path(os.environ.get("TRAJ_CACHE_ROOT", str(Path.home())))
-PYTENSOR_CACHE = Path.home() / '.pytensor_cache' / JOB_ID
+PYTENSOR_CACHE = CACHE_ROOT / '.pytensor_cache' / JOB_ID
 PYTENSOR_CACHE.mkdir(parents=True, exist_ok=True)
 os.environ['PYTENSOR_FLAGS'] = f"compiledir={PYTENSOR_CACHE},base_compiledir={PYTENSOR_CACHE},optimizer=fast_compile,exception_verbosity=high"
 
@@ -38,7 +38,7 @@ os.environ['OPENBLAS_NUM_THREADS'] = '1'
 
 sys.path.insert(0, os.path.abspath('src'))
 
-from traj_features.backends.bayes import BayesianTrajPS, BayesConfig
+from traj_features.backends.bayes import BayesianTraj, BayesConfig
 from traj_features.backends.bayes.classify import pos_flags_from_traj, flags_from_traj
 
 import pymc as pm
@@ -200,7 +200,7 @@ def compute_biomarker(
         label_map=cfg_defaults['label_map'],
     )
 
-    print(f"\n2. BayesianTrajPS Configuration:")
+    print(f"\n2. BayesianTraj Configuration:")
     print(f"   Biomarker: {biomarker}")
     print(f"   Window: {window_days} days")
     print(f"   Stable threshold: ±{flat_thr}")
@@ -209,7 +209,7 @@ def compute_biomarker(
 
     precompile_pytensor_functions(config)
 
-    traj_model = BayesianTrajPS(cfg=config)
+    traj_model = BayesianTraj(cfg=config)
 
     print(f"\n3. Computing trajectory probabilities...")
 
